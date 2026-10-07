@@ -1,0 +1,6 @@
+[workspace]
+release_always = false
+dependencies_update = false
+pr_branch_prefix = "release-plz-"
+git_tag_name = "v{{ version }}"
+git_release_enable = true

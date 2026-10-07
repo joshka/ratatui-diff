@@ -1,0 +1,41 @@
+name: Release media
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (media-v1 for README bootstrap)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: media-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  capture:
+    name: capture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # Release tags/assets or reviewed release branches.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        with:
+          tool: just@1.58.0,betamax@0.1.21
+      - run: just media
+      - name: Upload versioned assets
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$RELEASE_TAG" media/viewer.png media/viewer.gif --clobber

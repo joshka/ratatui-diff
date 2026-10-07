@@ -1,0 +1,80 @@
+name: Release-plz
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-plz-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+  release:
+    name: release
+    needs: ci
+    if: github.repository == 'joshka/ratatui-diff' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crates-io
+    permissions:
+      contents: write # Release tags/assets or reviewed release branches.
+      pull-requests: read # Inspect merged release PRs.
+      id-token: write # crates.io trusted publishing.
+    outputs:
+      releases: ${{ steps.release.outputs.releases }}
+      created: ${{ steps.release.outputs.releases_created }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: release-plz/action@aec534bbd8631793b9b3b8f1ee6cd886c322e17f # v0.5.133
+        id: release
+        with:
+          command: release
+          config: .config/release-plz.toml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  release-pr:
+    name: release-pr
+    needs: [ci, release]
+    if: github.repository == 'joshka/ratatui-diff' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # Release tags/assets or reviewed release branches.
+      pull-requests: write # Create and refresh release PRs.
+      actions: write # Dispatch release PR CI.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: release-plz/action@aec534bbd8631793b9b3b8f1ee6cd886c322e17f # v0.5.133
+        id: pr
+        with:
+          command: release-pr
+          config: .config/release-plz.toml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Dispatch CI on the release PR branch
+        if: steps.pr.outputs.pr != '' && steps.pr.outputs.pr != 'null'
+        env:
+          RELEASE_PR: ${{ steps.pr.outputs.pr }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          branch=$(python3 -c 'import json,os; print(json.loads(os.environ["RELEASE_PR"])["head_branch"])')
+          gh workflow run ci.yml --ref "$branch"
+  media:
+    name: media
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    uses: ./.github/workflows/media.yml
+    with:
+      tag: ${{ fromJSON(needs.release.outputs.releases)[0].tag }}
+    permissions:
+      contents: write # Release tags/assets or reviewed release branches.

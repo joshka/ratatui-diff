@@ -1,0 +1,138 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  formatting:
+    name: formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install nightly --profile minimal --component rustfmt
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        with:
+          tool: just@1.58.0,rumdl@0.2.77,typos-cli@1.47.2
+      - run: just fmt-check
+      - run: typos --config .config/typos.toml
+  tests:
+    name: tests (${{ matrix.os }}, ${{ matrix.toolchain }})
+    defaults:
+      run:
+        shell: bash
+    env:
+      TOOLCHAIN: ${{ matrix.toolchain }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable]
+        include:
+          - os: ubuntu-latest
+            toolchain: '1.98.0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$TOOLCHAIN" --profile minimal
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - run: cargo "+$TOOLCHAIN" test --all-targets --all-features --locked
+      - run: cargo "+$TOOLCHAIN" test --doc --all-features --locked
+      - run: cargo "+$TOOLCHAIN" check --no-default-features --all-targets --locked
+  clippy:
+    name: clippy (${{ matrix.toolchain }})
+    env:
+      TOOLCHAIN: ${{ matrix.toolchain }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, beta]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$TOOLCHAIN" --profile minimal --component clippy
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - run: cargo "+$TOOLCHAIN" clippy --all-targets --all-features --locked -- -D warnings
+  documentation:
+    name: documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        with:
+          tool: just@1.58.0,cargo-rdme@2.2.3
+      - run: rustup toolchain install nightly nightly-2026-08-05 --profile minimal
+      - run: just docs docs-rs readme-check
+      - run: cargo package --locked
+  policy:
+    name: policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        with:
+          tool: just@1.58.0,cargo-deny@0.20.2,zizmor@1.26.1,actionlint@1.7.12
+      - run: just ci-check zizmor deny
+        env:
+          GH_TOKEN: ${{ github.token }}
+  semver:
+    name: semver
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        with:
+          tool: cargo-semver-checks@0.49.0
+      - name: Check against the latest published release when available
+        run: |
+          set -euo pipefail
+          baseline=$(python3 scripts/published-version.py)
+          if [ -n "$baseline" ]; then
+            cargo semver-checks --baseline-version "$baseline"
+          else
+            echo 'No published baseline yet; initial release.'
+          fi
+  required:
+    name: required
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [formatting, tests, clippy, documentation, policy, semver]
+    if: ${{ always() }}
+    steps:
+      - name: Require all blocking jobs to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          failed = {name: job['result'] for name, job in results.items() if job['result'] != 'success'}
+          if failed:
+              raise SystemExit(str(failed))
+          PY

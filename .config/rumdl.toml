@@ -1,0 +1,10 @@
+[line-length]
+line-length = 100
+reflow = true
+reflow-mode = "normalize"
+tables = false
+ignore-link-urls = true
+
+[table-format]
+enabled = true
+style = "aligned"
