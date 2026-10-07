@@ -1,1 +1,4 @@
-/target
+/target/
+/media/
+*.profraw
+/lcov.info

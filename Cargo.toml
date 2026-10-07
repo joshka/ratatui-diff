@@ -2,5 +2,39 @@
 name = "ratatui-diff"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98"
+license = "MIT OR Apache-2.0"
+description = "A navigable unified and split diff widget for Ratatui"
+repository = "https://github.com/joshka/ratatui-diff"
+documentation = "https://docs.rs/ratatui-diff"
+readme = "README.md"
+keywords = ["ratatui", "diff", "terminal", "widget", "tui"]
+categories = ["command-line-interface", "visualization"]
+include = ["src/**", "README.md", "CHANGELOG.md", "LICENSE-*", "examples/*.rs", "benches/*.rs", "tests/**"]
 
 [dependencies]
+ratatui-core = "0.1"
+similar = { version = "3", default-features = false, features = ["std", "text", "inline", "unicode"] }
+diffy = { version = "0.5", default-features = false }
+unicode-segmentation = "1"
+unicode-width = "0.2"
+
+[dev-dependencies]
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+crossterm = "0.29"
+criterion = "0.8"
+
+[[bench]]
+name = "viewer"
+harness = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "warn"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
