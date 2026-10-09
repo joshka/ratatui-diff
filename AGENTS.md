@@ -14,3 +14,7 @@ Use jj, with a new described change for each independent review unit. Never crea
 focused checks while iterating and `just check` before handoff. Fix warnings at their source. Use
 nightly rustfmt and rumdl: prose wraps at 100 columns and tables remain aligned. Record reusable
 maintainer feedback in its owning guide; keep this file as the map.
+
+For visible changes, show labeled Betamax before/after images in commentary, the final handoff, and
+the PR. Follow the
+[visual evidence workflow](docs/testing.md#visual-evidence-during-development-and-review).
