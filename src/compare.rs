@@ -28,6 +28,12 @@ impl DiffDocument {
     /// inputs have no hunks. `context` controls unchanged lines around edits; zero shows only
     /// changed lines, and nearby edits may share a hunk.
     ///
+    /// Use `usize::MAX` to retain all source lines when the inputs differ. Context is clamped to
+    /// the larger input's line count before grouping, so this does not allocate artificial lines.
+    /// Retained context remains available for search and source-text extraction. Smaller context
+    /// counts discard omitted lines; the document cannot later recover them. Identical inputs
+    /// still have no hunks, even with `usize::MAX`.
+    ///
     /// CRLF and final-newline differences participate in comparison. Replacement lines are paired
     /// in source order for word highlights. Changed words separated only by whitespace share one
     /// highlight range; large pairs fall back to whole-line styling.
