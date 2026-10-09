@@ -34,6 +34,10 @@ fn benches(c: &mut Criterion) {
                 let mut state = DiffState::new();
                 let mut state_width = 100;
                 (&widget).render(area, &mut buf, &mut state);
+                group.bench_function(BenchmarkId::new(format!("hit-{label}"), count), |b| {
+                    let x = if mode == ViewMode::Split { 75 } else { 25 };
+                    b.iter(|| black_box(state.hit_test(black_box(x), black_box(12))))
+                });
                 group.bench_function(BenchmarkId::new(format!("scroll-{label}"), count), |b| {
                     b.iter(|| {
                         state.scroll_lines(1);

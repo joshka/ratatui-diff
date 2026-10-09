@@ -46,3 +46,10 @@ Synthetic cues recede toward their composed background: whitespace uses a quarte
 difference and continuation arrows use half of the number color's difference. Palette-owned colors
 fall back to `DIM`, avoiding assumptions about terminal RGB values. Literal source dots and arrows
 remain source text, and word emphasis retains its background and modifiers.
+
+Hit-testing reuses prepared glyph byte ranges and the last painted viewport rectangle and offsets.
+Navigation requires a redraw before cell lookup; hosts invalidate mapping when pending replacement
+or resize events precede drawing. Source ranges identify line-local UTF-8 bytes, while gutters and
+final-newline cues retain only line identities. See
+[interaction coordinates](interaction-coordinates.md) for Unicode, padding, and missing-context
+contracts.

@@ -18,6 +18,32 @@ compare steady viewport work across document sizes. Shared CI does not gate abso
 Betamax tapes exercise the example with output waits and fixed terminal geometry. Generated images
 are ignored and belong in release assets, never repository history.
 
+## Visual Evidence During Development and Review
+
+For visible changes, show what is being built throughout development. Capture the baseline before
+editing, then capture each meaningful result with Betamax and inspect the images. Include labeled
+before/after images in Codex commentary as changes occur, in the final handoff, and in the PR body.
+A reviewer should be able to identify the improvement from a couple of images and a short caption.
+Do not substitute a list of styling changes or passing tests for visual evidence.
+
+Use the same fixture, terminal dimensions, font, theme, and viewport position for each comparison.
+Label intentional differences. Choose views that reveal the change: unified/split, narrow/wrapped,
+search/selection states, or metadata as appropriate. Use static images for close inspection; include
+an animation only when motion or an interaction sequence matters. Capture intermediate states when
+they explain an interaction. Show rejected experiments when they clarify a meaningful tradeoff.
+
+Keep baseline and iteration images under distinct names so earlier commentary does not silently
+change when captures are regenerated. In Codex, embed images using absolute local paths and name the
+visible issue and result. In PRs, embed images from durable GitHub release asset URLs or approved
+GitHub attachments; local paths and expiring CI artifacts are not reviewer evidence. Label the two
+states, give the capture configuration, and keep the images close to the behavior description.
+Verify reviewer-accessible assets before publishing the PR. Asset publication requires authorization
+when it has not already been granted for the task; prepare and review captures first.
+
+Track tapes and original text fixtures, never generated media. Visual inspection complements buffer,
+style, navigation, and Unicode tests. Note unreviewed states and remaining defects honestly. Changes
+with no visible effect should say so when relevant, rather than manufacturing screenshots.
+
 ## Initial Scrolling Evidence
 
 Measured on October 7, 2026 with Rust 1.99 on an Apple M2 Max, macOS 26.6.2, release optimization, a

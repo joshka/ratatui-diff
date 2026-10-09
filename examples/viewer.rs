@@ -2,13 +2,14 @@
 use std::error::Error;
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode};
+use crossterm::execute;
 use ratatui::DefaultTerminal;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, StatefulWidget};
-use ratatui_diff::{Diff, DiffDocument, DiffState, DiffTheme, ViewMode};
+use ratatui_diff::{Diff, DiffDocument, DiffState, DiffTheme, HitTest, ViewMode};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
@@ -41,8 +42,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             ),
         };
     let mut terminal = ratatui::init();
-    let result = run(&mut terminal, color_theme);
+    let result = (|| {
+        execute!(std::io::stdout(), EnableMouseCapture)?;
+        run(&mut terminal, color_theme)
+    })();
+    let mouse_restore = execute!(std::io::stdout(), DisableMouseCapture);
     ratatui::restore();
+    mouse_restore?;
     result
 }
 
@@ -124,12 +130,14 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
     let mut numbers = true;
     let mut words = true;
     let mut theme = color_theme;
+    let mut pointer = None;
+    let mut body_area = Rect::default();
     loop {
         terminal.draw(|frame| {
             // Outer spacing belongs to the host; the diff fills its supplied rectangle.
             frame.render_widget(Block::default().style(theme.context), frame.area());
             let area = frame.area().inner(Margin::new(2, 1));
-            let [title_area, _, body, _, help_area] = Layout::vertical([
+            let [title_area, _, body, feedback_area, help_area] = Layout::vertical([
                 Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Min(0),
@@ -153,6 +161,7 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                 });
             }
             frame.render_widget(Paragraph::new(title), title_area);
+            body_area = body;
             let widget = Diff::new(&document)
                 .mode(mode)
                 .wrap(wrap)
@@ -161,17 +170,38 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                 .word_highlights(words)
                 .theme(theme);
             frame.render_stateful_widget(&widget, body, &mut state);
+            if let Some((x, y)) = pointer {
+                let feedback = match state.hit_test(x, y) {
+                    Some(HitTest::Source { old, new }) => {
+                        let range = new.or(old).expect("source hit has a side");
+                        format!(
+                            "Pointer ({x},{y}): file {} {:?} line {} bytes {}..{}",
+                            range.position.file,
+                            range.position.side,
+                            range.position.line,
+                            range.bytes.start,
+                            range.bytes.end
+                        )
+                    }
+                    hit => format!("Pointer ({x},{y}): {hit:?}"),
+                };
+                frame.render_widget(Paragraph::new(feedback), feedback_area);
+            }
             let help = if area.width >= 70 {
-                "s split · w wrap · t spaces · n numbers · i words · m mono · q quit"
+                "s split · w wrap · t spaces · n numbers · i words · m mono · p point · q quit"
             } else {
-                "s split · w wrap · m mono · q quit"
+                "s split · w wrap · m mono · p point · q quit"
             };
             frame.render_widget(Paragraph::new(Line::raw(help)), help_area);
         })?;
         if !event::poll(Duration::from_millis(250))? {
             continue;
         }
-        if let Event::Key(key) = event::read()? {
+        let event = event::read()?;
+        if let Event::Mouse(mouse) = event {
+            pointer = Some((mouse.column, mouse.row));
+        }
+        if let Event::Key(key) = event {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => break,
                 KeyCode::Down | KeyCode::Char('j') => state.scroll_lines(1),
@@ -190,6 +220,12 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                     } else {
                         ViewMode::Unified
                     }
+                }
+                KeyCode::Char('p') => {
+                    pointer = Some((
+                        body_area.x.saturating_add(15),
+                        body_area.y.saturating_add(5),
+                    ))
                 }
                 KeyCode::Char('w') => wrap = !wrap,
                 KeyCode::Char('t') => whitespace = !whitespace,
