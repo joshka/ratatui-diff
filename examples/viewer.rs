@@ -170,7 +170,8 @@ fn run(
             } else {
                 "Terminal palette"
             };
-            let mut title = format!("{mode:?} · {name}");
+            let wrap_label = if wrap { "wrapped" } else { "unwrapped" };
+            let mut title = format!("{mode:?} · {wrap_label} · {name}");
             if area.width >= 70 {
                 title.push_str(if whitespace {
                     " · whitespace on"
@@ -202,7 +203,7 @@ fn run(
             frame.render_stateful_widget(&widget, body, &mut state);
             if let Some(ref text) = copy_preview {
                 frame.render_widget(
-                    Paragraph::new(format!("Copy preview: {text:?}")),
+                    Paragraph::new(format!("Text preview: {text:?}")),
                     feedback_area,
                 );
             } else if let Some((x, y)) = pointer {
@@ -221,12 +222,22 @@ fn run(
                     hit => format!("Pointer ({x},{y}): {hit:?}"),
                 };
                 frame.render_widget(Paragraph::new(feedback), feedback_area);
+            } else if let Some(selection) = state.selection() {
+                let focus = selection.focus;
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "Selection · {:?} line {} · byte {}",
+                        focus.position.side, focus.position.line, focus.byte
+                    )),
+                    feedback_area,
+                );
             }
-            let help = if area.width >= 70 {
-                "/ search · f/F match · v select · c copy · s split · w wrap · q quit"
-            } else {
-                "/ search · f/F match · v select · c copy"
-            };
+            let help = interaction_hint(
+                editing_search,
+                state.selection().is_some(),
+                !query.is_empty(),
+                area.width,
+            );
             frame.render_widget(Paragraph::new(Line::raw(help)), help_area);
         })?;
         if !event::poll(Duration::from_millis(250))? {
@@ -262,6 +273,9 @@ fn run(
                 }
                 continue;
             }
+            if matches!(key.code, KeyCode::Char('s' | 'w' | 't' | 'n')) {
+                state.reveal_selection();
+            }
             match key.code {
                 KeyCode::Char('q') => break,
                 KeyCode::Esc if state.selection().is_some() => {
@@ -291,26 +305,32 @@ fn run(
                 KeyCode::Char('c') => copy_preview = state.selected_text(&document),
                 KeyCode::Right if state.selection().is_some() => {
                     state.extend_selection(&document, SelectionMotion::Next);
+                    state.reveal_selection();
                     copy_preview = None;
                 }
                 KeyCode::Left if state.selection().is_some() => {
                     state.extend_selection(&document, SelectionMotion::Previous);
+                    state.reveal_selection();
                     copy_preview = None;
                 }
                 KeyCode::Home if state.selection().is_some() => {
                     state.extend_selection(&document, SelectionMotion::LineStart);
+                    state.reveal_selection();
                     copy_preview = None;
                 }
                 KeyCode::End if state.selection().is_some() => {
                     state.extend_selection(&document, SelectionMotion::LineEnd);
+                    state.reveal_selection();
                     copy_preview = None;
                 }
                 KeyCode::Down if state.selection().is_some() => {
                     state.extend_selection(&document, SelectionMotion::NextLine);
+                    state.reveal_selection();
                     copy_preview = None;
                 }
                 KeyCode::Up if state.selection().is_some() => {
                     state.extend_selection(&document, SelectionMotion::PreviousLine);
+                    state.reveal_selection();
                     copy_preview = None;
                 }
                 KeyCode::Char('/') => {
@@ -328,7 +348,10 @@ fn run(
                     query.clear();
                     state.clear_search();
                 }
-                KeyCode::Esc => break,
+                KeyCode::Esc => {
+                    copy_preview = None;
+                    pointer = None;
+                }
                 KeyCode::Down | KeyCode::Char('j') => state.scroll_lines(1),
                 KeyCode::Up | KeyCode::Char('k') => state.scroll_lines(-1),
                 KeyCode::Left => state.scroll_horizontal(-4),
@@ -406,5 +429,55 @@ fn update_pointer_selection(
             }
         }
         _ => {}
+    }
+}
+
+/// Keep the active input policy visible before secondary presentation controls.
+fn interaction_hint(editing: bool, selecting: bool, searching: bool, width: u16) -> &'static str {
+    if editing {
+        if width < 45 {
+            "Enter find · Esc cancel"
+        } else {
+            "Type literal search · Enter find · Esc cancel"
+        }
+    } else if selecting {
+        if width < 78 {
+            "Arrows select · c preview · Esc clear"
+        } else {
+            "←/→ grapheme · ↑/↓ source line · Home/End · c preview · Esc clear selection"
+        }
+    } else if searching {
+        if width < 45 {
+            "f/F match · v select · Esc clear"
+        } else {
+            "f/F match · v select · / search · Esc clear search · q quit"
+        }
+    } else if width < 45 {
+        "/ search · v select · s split · q quit"
+    } else {
+        "Arrows scroll · / search · v select · s split · w wrap · q quit"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::interaction_hint;
+
+    #[test]
+    fn hints_prioritize_active_input_policy_and_label_preview() {
+        assert_eq!(
+            interaction_hint(true, true, true, 40),
+            "Enter find · Esc cancel"
+        );
+        assert_eq!(
+            interaction_hint(false, true, true, 40),
+            "Arrows select · c preview · Esc clear"
+        );
+        assert_eq!(
+            interaction_hint(false, false, true, 40),
+            "f/F match · v select · Esc clear"
+        );
+        assert!(interaction_hint(false, true, true, 100).contains("source line"));
+        assert!(interaction_hint(false, false, false, 100).contains("q quit"));
     }
 }
