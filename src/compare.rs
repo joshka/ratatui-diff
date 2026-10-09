@@ -5,13 +5,39 @@ use crate::{DiffDocument, DiffFile, DiffLine, Hunk, LineKind};
 
 impl DiffDocument {
     /// Compare two UTF-8 texts with three context lines and generic source labels.
+    ///
+    /// Equivalent to [`compare`](Self::compare) with `context = 3`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ratatui_diff::DiffDocument;
+    ///
+    /// let document = DiffDocument::from_text("hello\n", "hello world\n");
+    /// assert_eq!(document.files().len(), 1);
+    /// assert_eq!(document.files()[0].hunks.len(), 1);
+    /// ```
     pub fn from_text(old: &str, new: &str) -> Self {
         Self::compare(old, new, 3)
     }
     /// Compare texts with a caller-selected number of context lines.
     ///
-    /// Line endings participate in comparison. Computation is synchronous; applications
-    /// should prepare large inputs outside their UI event loop.
+    /// Returns one file labelled `old` and `new`, even for identical or empty inputs. Identical
+    /// inputs have no hunks. `context` controls unchanged lines around edits; zero shows only
+    /// changed lines, and nearby edits may share a hunk.
+    ///
+    /// CRLF and final-newline differences participate in comparison. Replacement lines are paired
+    /// in source order for word highlights, with large pairs falling back to whole-line styling.
+    /// Computation is synchronous; prepare large inputs outside the UI event loop.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ratatui_diff::DiffDocument;
+    ///
+    /// let document = DiffDocument::compare("same\nbefore\n", "same\nafter\n", 0);
+    /// assert_eq!(document.files()[0].hunks[0].old, 2..3);
+    /// ```
     pub fn compare(old: &str, new: &str, context: usize) -> Self {
         let diff = TextDiff::from_lines(old, new);
         let mut hunks = Vec::new();
@@ -69,8 +95,12 @@ impl DiffDocument {
         }
     }
 }
-// Pair in source order, matching split layout. Limit each run to 256 lines and each
-// pair to 8 KiB / 2,048 words: adversarial replacements retain whole-line styling.
+/// Fill missing highlights for deletion/insertion pairs separated by context lines.
+///
+/// Pair in source order, matching split layout. Limit each run to 256 lines and each pair to a
+/// combined 8 KiB / 2,048 whitespace-delimited words. Unmatched or over-limit lines retain their
+/// existing highlights; `None` renders with whole-line styling. Explicit ranges, including empty
+/// lists, remain authoritative. These limits bound refinement, not whole-document comparison.
 pub(crate) fn refine(lines: &mut [DiffLine]) {
     let mut start = 0;
     while start < lines.len() {
