@@ -7,6 +7,7 @@ use std::ops::Range;
 
 use ratatui_core::buffer::Buffer;
 use ratatui_core::layout::Rect;
+use ratatui_core::style::{Color, Modifier, Style};
 use ratatui_core::widgets::StatefulWidget;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -57,6 +58,9 @@ struct Glyph {
 
     width: usize,
     emphasized: bool,
+
+    /// A generated space or tab marker, rather than a literal source dot or arrow.
+    whitespace_marker: bool,
 }
 
 /// One source line or synthetic header, with width-independent display geometry.
@@ -94,6 +98,9 @@ struct ScreenRow {
     row: usize,
     left: Range<usize>,
     right: Range<usize>,
+
+    /// True after the first screen row, even when one source side is empty.
+    continuation: bool,
 }
 
 /// Inputs that invalidate screen geometry.
@@ -405,7 +412,9 @@ impl<'a> Diff<'a> {
 
     /// Show or hide line numbers. Visible by default.
     ///
-    /// Change markers remain visible. The next render recalculates the gutter and wrapped rows.
+    /// Change markers remain adjacent to source text. Wrapped continuations use a dim `↪` in the
+    /// number column instead of repeating the number. The next render recalculates gutters and
+    /// wrapped rows.
     pub fn line_numbers(mut self, visible: bool) -> Self {
         self.numbers = visible;
         self
@@ -423,8 +432,9 @@ impl<'a> Diff<'a> {
 
     /// Display spaces as `·` and tab starts as `→`. Disabled by default.
     ///
-    /// Tab padding still fills the remaining cells to the next tab stop. Control characters remain
-    /// visible as escapes regardless of this option. Headers do not use whitespace markers.
+    /// Generated markers are dimmed over the source's row and word-highlight backgrounds; literal
+    /// dots and arrows retain their source style. Tab padding fills the remaining cells to the next
+    /// tab stop. Controls remain visible as escapes. Headers do not use whitespace markers.
     pub fn whitespace(mut self, visible: bool) -> Self {
         self.whitespace = visible;
         self
@@ -646,6 +656,7 @@ impl<'a> Diff<'a> {
                     row: n,
                     left: left.get(i).cloned().unwrap_or(0..0),
                     right: right.get(i).cloned().unwrap_or(0..0),
+                    continuation: i > 0,
                 });
             }
         }
@@ -655,7 +666,7 @@ impl<'a> Diff<'a> {
         state.new_sources.sort_unstable();
     }
 
-    // Split content reserves one separator cell; integer division can leave one trailing cell.
+    // Equal source widths reserve one separator cell and, at even widths, right-edge padding.
     fn pane_width(self, width: u16, header: bool) -> usize {
         if self.mode == ViewMode::Split && !header {
             usize::from(width.saturating_sub(1)) / 2
@@ -669,11 +680,11 @@ impl<'a> Diff<'a> {
         if header {
             0
         } else if !self.numbers {
-            2
+            1
         } else if self.mode == ViewMode::Unified {
-            digits * 2 + 4
+            digits * 2 + 3
         } else {
-            digits + 3
+            digits + 2
         }
     }
 }
@@ -709,7 +720,7 @@ impl StatefulWidget for &Diff<'_> {
             let py = area.y + y as u16;
             self.draw(
                 &row.left,
-                &screen.left,
+                screen,
                 area.x,
                 py,
                 pane_width,
@@ -725,12 +736,14 @@ impl StatefulWidget for &Diff<'_> {
                 if x < area.right() {
                     buf[(x, py)].set_symbol("│").set_style(self.theme.gutter);
                 }
+                let right_x = x.saturating_add(1);
+                let right_pane = usize::from(area.right().saturating_sub(right_x));
                 self.draw(
                     right,
-                    &screen.right,
-                    x.saturating_add(1),
+                    screen,
+                    right_x,
                     py,
-                    pane_width,
+                    right_pane,
                     gutter,
                     width,
                     false,
@@ -750,7 +763,7 @@ impl Diff<'_> {
     fn draw(
         self,
         content: &Content,
-        segment: &Range<usize>,
+        screen: &ScreenRow,
         x: u16,
         y: u16,
         pane: usize,
@@ -761,6 +774,10 @@ impl Diff<'_> {
         buf: &mut Buffer,
         state: &DiffState,
     ) {
+        let segment = match side {
+            Side::Old => &screen.left,
+            Side::New => &screen.right,
+        };
         let style = if header {
             self.theme.header
         } else {
@@ -776,33 +793,66 @@ impl Diff<'_> {
         for dx in 0..pane.min(usize::from(buf.area.right() - x)) {
             buf[(x + dx as u16, y)].set_style(style);
         }
-        if !header {
+        if !header && !(screen.continuation && segment.is_empty()) {
             let marker = match content.kind {
                 LineKind::Context => ' ',
                 LineKind::Insert => '+',
                 LineKind::Delete => '-',
             };
-            let number = |n: Option<usize>| {
-                n.map_or_else(
-                    || " ".repeat(state.digits),
-                    |n| format!("{n:>w$}", w = state.digits),
-                )
+            let number = |n: Option<usize>, side: Side| {
+                let Some(n) = n else {
+                    return " ".repeat(state.digits);
+                };
+                if screen.continuation {
+                    // Unified context has two numbers but needs only one continuation cue.
+                    if self.mode == ViewMode::Unified && side == Side::Old && content.new.is_some()
+                    {
+                        " ".repeat(state.digits)
+                    } else {
+                        format!("{:>w$}", "↪", w = state.digits)
+                    }
+                } else {
+                    format!("{n:>w$}", w = state.digits)
+                }
             };
             let prefix = if !self.numbers {
-                format!("{marker} ")
+                format!("{marker}")
             } else if self.mode == ViewMode::Unified {
-                format!("{} {} {marker} ", number(content.old), number(content.new))
+                format!(
+                    "{} {} {marker}",
+                    number(content.old, Side::Old),
+                    number(content.new, Side::New)
+                )
             } else {
                 format!(
-                    "{} {marker} ",
-                    number(if side == Side::Old {
-                        content.old
-                    } else {
-                        content.new
-                    })
+                    "{} {marker}",
+                    number(
+                        if side == Side::Old {
+                            content.old
+                        } else {
+                            content.new
+                        },
+                        side
+                    )
                 )
             };
             buf.set_stringn(x, y, prefix, gutter, self.theme.gutter);
+            if screen.continuation {
+                for column in 0..gutter {
+                    let cell = &mut buf[(x + column as u16, y)];
+                    if cell.symbol() == "↪" {
+                        let cue = self.theme.context.patch(style).patch(self.theme.gutter);
+                        cell.set_style(ghost_style(cue, 2));
+                    }
+                }
+            }
+            let marker_column = self.gutter_width(state.digits, false) - 1;
+            if marker_column < gutter {
+                let cell = &mut buf[(x + marker_column as u16, y)];
+                cell.reset();
+                cell.set_char(marker)
+                    .set_style(self.theme.context.patch(style));
+            }
         }
         if width == 0 || segment.is_empty() {
             return;
@@ -835,6 +885,11 @@ impl Diff<'_> {
             } else {
                 style
             };
+            let style = if glyph.whitespace_marker {
+                ghost_style(self.theme.context.patch(style), 4)
+            } else {
+                style
+            };
             buf.set_stringn(
                 x + (gutter + column) as u16,
                 y,
@@ -844,6 +899,18 @@ impl Diff<'_> {
             );
         }
     }
+}
+
+// Synthetic cues recede toward their composed background. RGB colors make the fraction explicit;
+// palette-owned colors retain the terminal's dim treatment because their actual RGB is unknown.
+fn ghost_style(style: Style, divisor: u16) -> Style {
+    let (Some(Color::Rgb(r, g, b)), Some(Color::Rgb(br, bg, bb))) = (style.fg, style.bg) else {
+        return style.add_modifier(Modifier::DIM);
+    };
+    let blend = |foreground: u8, background: u8| {
+        ((u16::from(foreground) + u16::from(background) * (divisor - 1)) / divisor) as u8
+    };
+    style.fg(Color::Rgb(blend(r, br), blend(g, bg), blend(b, bb)))
 }
 
 // Padding content has no source identity, marker, or missing-newline annotation.
@@ -895,6 +962,7 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
                     column,
                     width: 1,
                     emphasized,
+                    whitespace_marker: whitespace && n == 0,
                 });
                 column += 1;
             }
@@ -927,6 +995,7 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
                 column,
                 width,
                 emphasized,
+                whitespace_marker: whitespace && g == " ",
             });
             column += width;
         }
@@ -941,6 +1010,7 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
                 column,
                 width,
                 emphasized: false,
+                whitespace_marker: false,
             });
             column += width;
         }

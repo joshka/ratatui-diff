@@ -13,8 +13,8 @@ from the [interactive example](../examples/viewer.rs).
 
 `DiffTheme::aardvark_ink()` supplies an explicit dark RGB surface, green additions, and red
 deletions. Row backgrounds show the extent of each change; stronger backgrounds and bold text
-identify changed words. Neutral line numbers remain readable on either row color. Cyan file and hunk
-headers use the same ink background as the source.
+identify changed words. Dimmed neutral line numbers remain readable on either row color. Cyan file
+and hunk headers use the same ink background as the source.
 
 ```rust
 use ratatui_diff::{Diff, DiffDocument, DiffTheme, ViewMode};
@@ -43,6 +43,8 @@ check its headers and word highlights against the terminal palette used by your 
 
 Unified view gives each line the full width. It suits narrow hosts and changes that read naturally
 from top to bottom. Old and new line numbers stay separate; `-` and `+` identify the source side.
+One space separates numbers from the change marker; source text follows the marker immediately.
+Numbers and the pane separator recede while change markers use the source row's color.
 
 ```rust
 let diff = Diff::new(&document)
@@ -57,7 +59,10 @@ Replacements pair in source order; moved code is not detected.
 
 ## Adjust word highlights and line numbers
 
-Word highlights help locate small edits inside a changed line. Disable them to show only row colors.
+Word highlights help locate small edits inside a changed line. Automatic highlights join changed
+words across intervening whitespace, forming one highlighted phrase. Leading and trailing unchanged
+whitespace stays outside the phrase; caller-supplied ranges remain exact. Disable word highlights to
+show only row colors.
 
 ```rust
 let diff = Diff::new(&document)
@@ -82,8 +87,9 @@ let diff = Diff::new(&document)
 
 ## Inspect whitespace
 
-Whitespace markers make indentation and spaces visible without changing the source. The markers
-inherit the source style, including word highlights where applicable.
+Whitespace markers make indentation and spaces visible without changing the source. Generated dots
+and tab arrows are dimmed, retaining the row and word-highlight backgrounds. Literal dots and arrows
+in source keep their text style.
 
 ```rust
 let diff = Diff::new(&document)
@@ -97,8 +103,9 @@ let diff = Diff::new(&document)
 ## Fit narrow views
 
 An unwrapped split view clips long lines at the pane boundary. Horizontal scrolling is synchronized.
-Wrapping breaks long lines across additional rows; continuation rows retain their source line
-number. Switching to unified view is another useful host choice. The widget does not switch modes
+Wrapping breaks long lines across additional rows. The first row shows the source number;
+continuations show `↪`, dimmer than the numbers, in the number column. Empty alignment cells stay
+blank. Switching to unified view is another useful host choice. The widget does not switch modes
 automatically at a breakpoint.
 
 ![At a narrow width, unwrapped split lines clip rather than running into the neighboring pane.](../media/aardvark-narrow-split.png)
@@ -111,7 +118,7 @@ let diff = Diff::new(&document)
     .wrap(true);
 ```
 
-![Wrapping preserves pane boundaries and repeats line numbers for continued source lines.](../media/aardvark-narrow-wrapped.png)
+![Wrapping preserves pane boundaries and marks continued source lines with dim arrows.](../media/aardvark-narrow-wrapped.png)
 
 ## Use monochrome
 
@@ -145,12 +152,18 @@ displayed row count, including wrapped lines.
 | Addition     | `#75cf84`  | `#162b25`      | `#254835`               |
 | Deletion     | `#e48383`  | `#30202a`      | `#4b2530`               |
 | Header       | `#52c4c0`  | `#0f141f`      | —                       |
-| Gutter       | `#b4bcca`  | Inherits row   | —                       |
+| Gutter       | `#6f7a8f`  | Inherits row   | —                       |
 
-The foregrounds and base come from the Aardvark Ink Ghostty palette; the tinted change backgrounds
-are chosen for this widget. Rendered-cell tests require at least 4.5:1 foreground/background
-contrast across context, headers, gutters, rows, and changed words. Markers and underlines preserve
-change cues without color. Terminal rendering and font settings can still affect readability.
+The source foregrounds and base come from the Aardvark Ink Ghostty palette; the dimmed gutter and
+tinted change backgrounds are chosen for this widget. Rendered-cell tests require at least 4.5:1
+foreground/background contrast for source text, headers, change markers, and changed words. The
+quieter number and separator colors retain at least 3:1 contrast against their row backgrounds. With
+explicit RGB foregrounds and backgrounds, whitespace markers retain one-quarter of the
+foreground-to-background channel difference; continuation arrows retain one-half of the
+number-to-background difference. These blends preserve each cell's background and word modifiers.
+They establish a consistent hierarchy, not a perceptual contrast standard. When either color is
+terminal-owned, synthetic cues use the terminal's dim modifier. Change markers and underlines
+preserve cues without color. Terminal rendering and font settings can still affect readability.
 
 ## Run the example
 

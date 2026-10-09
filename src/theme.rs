@@ -26,10 +26,10 @@ pub struct DiffTheme {
     /// Unchanged content and blank cells.
     pub context: Style,
 
-    /// Inserted content and blank cells in its pane, excluding the gutter.
+    /// Inserted content, change markers, and blank cells, excluding the number gutter.
     pub insert: Style,
 
-    /// Deleted content and blank cells in its pane, excluding the gutter.
+    /// Deleted content, change markers, and blank cells, excluding the number gutter.
     pub delete: Style,
 
     /// Inline insertion emphasis, patched over the line style.
@@ -106,8 +106,8 @@ impl DiffTheme {
                 .fg(Color::Rgb(0x52, 0xc4, 0xc0))
                 .bg(Color::Rgb(0x0f, 0x14, 0x1f))
                 .add_modifier(Modifier::BOLD),
-            // Inherit row backgrounds so numbers and +/- markers remain part of each row.
-            gutter: Style::default().fg(Color::Rgb(0xb4, 0xbc, 0xca)),
+            // Quiet numbers inherit row backgrounds; +/- markers use their source row style.
+            gutter: Style::default().fg(Color::Rgb(0x6f, 0x7a, 0x8f)),
         }
     }
 

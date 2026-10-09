@@ -1,4 +1,6 @@
 //! Comparison stays outside frame rendering.
+use std::ops::Range;
+
 use similar::{ChangeTag, TextDiff};
 
 use crate::{DiffDocument, DiffFile, DiffLine, Hunk, LineKind};
@@ -27,7 +29,8 @@ impl DiffDocument {
     /// changed lines, and nearby edits may share a hunk.
     ///
     /// CRLF and final-newline differences participate in comparison. Replacement lines are paired
-    /// in source order for word highlights, with large pairs falling back to whole-line styling.
+    /// in source order for word highlights. Changed words separated only by whitespace share one
+    /// highlight range; large pairs fall back to whole-line styling.
     /// Computation is synchronous; prepare large inputs outside the UI event loop.
     ///
     /// # Example
@@ -138,11 +141,11 @@ pub(crate) fn refine(lines: &mut [DiffLine]) {
                             y += len;
                         }
                         ChangeTag::Delete => {
-                            left.push(x..x + len);
+                            push_highlight(&mut left, x..x + len, old);
                             x += len;
                         }
                         ChangeTag::Insert => {
-                            right.push(y..y + len);
+                            push_highlight(&mut right, y..y + len, new);
                             y += len;
                         }
                     }
@@ -156,5 +159,19 @@ pub(crate) fn refine(lines: &mut [DiffLine]) {
             }
         }
         start = end;
+    }
+}
+
+// Changed words separated only by whitespace read as one phrase. Keep the outer boundaries exact
+// and leave caller-supplied ranges untouched; only automatic refinement calls this helper.
+fn push_highlight(ranges: &mut Vec<Range<usize>>, range: Range<usize>, text: &str) {
+    if let Some(previous) = ranges.last_mut()
+        && text[previous.end..range.start]
+            .chars()
+            .all(char::is_whitespace)
+    {
+        previous.end = range.end;
+    } else {
+        ranges.push(range);
     }
 }

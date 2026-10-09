@@ -159,7 +159,7 @@ fn split_alignment_pads_uneven_changes() {
     let mut state = DiffState::new();
     let b = render(&Diff::new(&d).mode(ViewMode::Split), &mut state, 30, 6);
     assert_eq!(state.row_count(), 4);
-    assert!(text(&b).contains("2 - b"));
+    assert!(text(&b).contains("2 -b"));
 }
 #[test]
 fn controls_are_visible_and_tabs_follow_stops() {
@@ -182,8 +182,8 @@ fn wide_graphemes_are_not_split_at_horizontal_edges() {
     render(&Diff::new(&d).line_numbers(false), &mut state, 6, 3);
     state.scroll_horizontal(1);
     let b = render(&Diff::new(&d).line_numbers(false), &mut state, 6, 3);
-    assert_eq!(b[(2, 2)].symbol(), " ");
-    assert_eq!(b[(3, 2)].symbol(), "a");
+    assert_eq!(b[(1, 2)].symbol(), " ");
+    assert_eq!(b[(2, 2)].symbol(), "a");
 }
 #[test]
 fn wrapped_rows_keep_source_mapping_and_resize_anchor() {
@@ -390,4 +390,120 @@ fn structured_documents_reject_impossible_file_and_line_shapes() {
         ],
     }];
     assert!(DiffDocument::new(vec![file]).is_err());
+}
+
+#[test]
+fn automatic_highlights_join_phrases_but_preserve_unchanged_boundaries() {
+    for (old, new, left, right) in [
+        (
+            "  red fox keep blue jay  \n",
+            "  green owl keep white swan  \n",
+            vec![2..9, 15..23],
+            vec![2..11, 17..27],
+        ),
+        (
+            " α\tβ same \n",
+            " γ\tδ same \n",
+            std::iter::once(1..6).collect(),
+            std::iter::once(1..6).collect(),
+        ),
+    ] {
+        let document = DiffDocument::from_text(old, new);
+        let lines = &document.files()[0].hunks[0].lines;
+        assert_eq!(lines[0].highlights.as_ref(), Some(&left));
+        assert_eq!(lines[1].highlights.as_ref(), Some(&right));
+
+        let mut files = document.files().to_vec();
+        let explicit = vec![2..5, 6..9];
+        // Deliberately exclude the space between two caller-selected words.
+        if old.is_ascii() {
+            files[0].hunks[0].lines[0].highlights = Some(explicit.clone());
+            let supplied = DiffDocument::new(files).unwrap();
+            assert_eq!(
+                supplied.files()[0].hunks[0].lines[0].highlights,
+                Some(explicit)
+            );
+        }
+    }
+}
+
+#[test]
+fn only_generated_whitespace_markers_are_dimmed() {
+    let document = DiffDocument::from_text("", "a · →\twords here\n");
+    let mut state = DiffState::new();
+    let diff = Diff::new(&document).line_numbers(false).whitespace(true);
+    let buffer = render(&diff, &mut state, 40, 4);
+    // The marker takes one cell. Literal dot/arrow remain source text.
+    for (x, symbol, dim) in [
+        (2, "·", true),
+        (3, "·", false),
+        (5, "→", false),
+        (6, "→", true),
+    ] {
+        assert_eq!(buffer[(x, 2)].symbol(), symbol);
+        assert_eq!(buffer[(x, 2)].modifier.contains(Modifier::DIM), dim);
+    }
+    let hidden = render(&diff.whitespace(false), &mut state, 40, 4);
+    assert!(
+        hidden
+            .content
+            .iter()
+            .all(|cell| !cell.modifier.contains(Modifier::DIM))
+    );
+}
+
+#[test]
+fn compact_gutters_keep_markers_adjacent_to_source() {
+    let document = DiffDocument::from_text("a\n", "b\n");
+    for (mode, numbers, expected) in [
+        (ViewMode::Unified, true, "1   -a"),
+        (ViewMode::Unified, false, "-a"),
+        (ViewMode::Split, true, "1 -a"),
+        (ViewMode::Split, false, "-a"),
+    ] {
+        let mut state = DiffState::new();
+        let diff = Diff::new(&document).mode(mode).line_numbers(numbers);
+        let buffer = render(&diff, &mut state, 25, 4);
+        assert!(text(&buffer).contains(expected), "{}", text(&buffer));
+    }
+}
+
+#[test]
+fn wrapped_gutters_distinguish_continuations_from_empty_alignment_cells() {
+    let document = DiffDocument::from_text("abcdefghij\n\n", "klmnopqrst\nuvwxyzabcd\n");
+    let mut state = DiffState::new();
+    let diff = Diff::new(&document).mode(ViewMode::Split).wrap(true);
+    let buffer = render(&diff, &mut state, 19, 8);
+    assert_eq!(buffer[(0, 2)].symbol(), "1");
+    assert_eq!(buffer[(0, 3)].symbol(), "↪");
+    assert!(!buffer[(0, 2)].modifier.contains(Modifier::DIM));
+    assert!(buffer[(0, 3)].modifier.contains(Modifier::DIM));
+    assert_eq!(buffer[(0, 4)].symbol(), "2");
+    // A genuine blank source line has a number; its alignment padding does not.
+    for x in 0..9 {
+        assert_eq!(buffer[(x, 5)].symbol(), " ");
+    }
+    assert_eq!(buffer[(10, 5)].symbol(), "↪");
+    assert_eq!(state.source_at(3, Side::Old).unwrap().line, 1);
+    assert_eq!(state.source_at(5, Side::New).unwrap().line, 2);
+
+    render(&diff, &mut state, 19, 2);
+    state.scroll_lines(3);
+    let scrolled = render(&diff, &mut state, 19, 2);
+    assert_eq!(scrolled[(0, 0)].symbol(), "↪");
+    assert_eq!(state.source_at(state.offset(), Side::Old).unwrap().line, 1);
+}
+
+#[test]
+fn unified_context_has_one_continuation_cue_for_both_source_numbers() {
+    let document = DiffDocument::from_text("context-long\nold\n", "context-long\nnew\n");
+    let mut state = DiffState::new();
+    let buffer = render(&Diff::new(&document).wrap(true), &mut state, 16, 8);
+    assert_eq!(buffer[(0, 2)].symbol(), "1");
+    assert_eq!(buffer[(2, 2)].symbol(), "1");
+    assert_eq!(buffer[(0, 3)].symbol(), " ");
+    assert_eq!(buffer[(2, 3)].symbol(), "↪");
+    assert!(buffer[(2, 3)].modifier.contains(Modifier::DIM));
+    assert_eq!(state.source_at(3, Side::Old).unwrap().line, 1);
+    assert_eq!(state.source_at(3, Side::New).unwrap().line, 1);
 }
