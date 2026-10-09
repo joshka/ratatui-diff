@@ -14,6 +14,6 @@ Wait+Screen /fixtures\/whitespace.txt/
 Type "st"
 Wait+Screen /whitespace.on/
 Show
-Screenshot media/fixtures-whitespace-split.png
+Screenshot media/fixtures-whitespace-nested-split.png
 Hide
 Type "q"
