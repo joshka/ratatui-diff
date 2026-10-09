@@ -8,6 +8,28 @@ impl DiffDocument {
     ///
     /// Empty input is an empty document. Combined merge diffs are rejected. Binary
     /// changes are summaries; this library never applies patches or decompresses payloads.
+    ///
+    /// Extended headers and paths are retained for display. CRLF payload endings and missing final
+    /// newlines are preserved; only lines present in the patch are available for navigation.
+    /// Parsing also validates the model and prepares missing highlights via [`Self::new`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DiffError`] for malformed patches, unsupported combined merge diffs, or invalid
+    /// source structure. Parser positions refer to bytes in the original input, before header
+    /// normalization. Validation errors may have no offset.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ratatui_diff::DiffDocument;
+    ///
+    /// let patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
+    /// let document = DiffDocument::parse(patch)?;
+    /// assert_eq!(document.files()[0].hunks[0].lines.len(), 2);
+    /// assert!(DiffDocument::parse("diff --cc file\n").is_err());
+    /// # Ok::<(), ratatui_diff::DiffError>(())
+    /// ```
     pub fn parse(input: &str) -> Result<Self, DiffError> {
         if input.trim().is_empty() {
             return Self::new(Vec::new());

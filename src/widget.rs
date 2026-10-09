@@ -1,4 +1,8 @@
-//! Indexed screen rows keep frame work independent of total document length.
+//! Prepared source rows, width-dependent screen rows, and viewport navigation.
+//!
+//! [`Diff`] borrows immutable content; [`DiffState`] owns its cached geometry and offsets.
+//! Preparation may traverse the document. Drawing uses the indexed visible rows.
+
 use std::ops::Range;
 
 use ratatui_core::buffer::Buffer;
@@ -12,29 +16,53 @@ use crate::{DiffDocument, DiffLine, DiffTheme, LineKind, Side};
 /// Diff presentation mode.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
-    /// Interleaved original and modified lines.
+    /// Original and modified lines in unified order, with both line-number columns. The default.
     #[default]
     Unified,
-    /// Original and modified source in synchronized columns.
+
+    /// Original source on the left and modified source on the right.
+    ///
+    /// Replacement lines pair in source order; unmatched lines leave a blank opposite pane.
+    /// Wrapped pairs use the taller side's height, and horizontal scrolling moves both panes.
     Split,
 }
+
 /// A numbered source location within a document.
+///
+/// Used by [`DiffState::source_at`] and [`DiffState::scroll_to_source`]. This value is not
+/// validated on construction; a location can refer to a missing file or omitted patch context.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourcePosition {
     /// File index, starting at zero.
     pub file: usize,
+
     /// Original or modified source.
     pub side: Side,
+
     /// Source line number, starting at one.
     pub line: usize,
 }
+
+/// A display unit after tab/control expansion, positioned in terminal cells.
+///
+/// Ordinary units contain one grapheme; tabs become individual spaces and a control escape stays
+/// one unit. Clipping and wrapping never divide a unit. Highlight overlap is resolved from source
+/// bytes during preparation, before transformations change the displayed text.
 #[derive(Debug)]
 struct Glyph {
     text: String,
+
+    /// Cell offset from the start of the unwrapped content, excluding the gutter.
     column: usize,
+
     width: usize,
     emphasized: bool,
 }
+
+/// One source line or synthetic header, with width-independent display geometry.
+///
+/// Source numbers survive wrapping. Missing split partners use empty context content with neither
+/// number, so they cannot be returned by source lookup.
 #[derive(Debug)]
 struct Content {
     glyphs: Vec<Glyph>,
@@ -43,6 +71,11 @@ struct Content {
     new: Option<usize>,
     width: usize,
 }
+
+/// A logical row before wrapping: one unified line, a split pair, or a full-width header.
+///
+/// `right` is present for split content, including an empty partner. Headers have no source
+/// numbers; their file/hunk IDs identify navigation boundaries.
 #[derive(Debug)]
 struct Row {
     file: usize,
@@ -51,12 +84,23 @@ struct Row {
     right: Option<Content>,
     header: bool,
 }
+
+/// One displayed continuation of a logical row.
+///
+/// `row` indexes `DiffState::rows`; `left` and `right` index glyphs, not bytes or cells. Empty
+/// ranges pad the shorter wrapped side while retaining the logical row's source mapping.
 #[derive(Debug)]
 struct ScreenRow {
     row: usize,
     left: Range<usize>,
     right: Range<usize>,
 }
+
+/// Inputs that invalidate screen geometry.
+///
+/// Height only changes clamping. Theme and highlight visibility affect painting, so neither belongs
+/// in this key. Some changes rebuild only screen rows; `prepare` decides whether glyphs are
+/// reusable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct LayoutKey {
     document: u64,
@@ -67,10 +111,51 @@ struct LayoutKey {
     whitespace: bool,
     tab: usize,
 }
+
 /// Viewport state and prepared layout cache.
 ///
 /// Render once before page navigation or source mapping. Reuse this state between frames;
 /// replacing it discards layout caches. Offsets use `usize`, independent of terminal height limits.
+///
+/// Line/page commands operate on displayed rows, including headers and wrapped continuations.
+/// [`source_at`](Self::source_at) and [`scroll_to_source`](Self::scroll_to_source) use source
+/// line numbers instead. Page commands use the last rendered height. Navigation clamps to the
+/// final full viewport; a requested source line near the end may appear below the first row.
+/// Mode/width changes preserve a source anchor, while document replacement resets offsets.
+/// Keep one state per independently navigated view.
+///
+/// # Navigation
+///
+/// - Inspect the last render with [`offset`](Self::offset),
+///   [`horizontal_offset`](Self::horizontal_offset), and [`row_count`](Self::row_count).
+/// - Move relatively with [`scroll_lines`](Self::scroll_lines),
+///   [`scroll_pages`](Self::scroll_pages), [`scroll_half_pages`](Self::scroll_half_pages), and
+///   [`scroll_horizontal`](Self::scroll_horizontal).
+/// - Jump with [`start`](Self::start), [`end`](Self::end), or the file/hunk navigation methods.
+/// - Map source positions with [`source_at`](Self::source_at) and
+///   [`scroll_to_source`](Self::scroll_to_source).
+///
+/// Navigation uses the last rendered layout. Changing widget options alone does not refresh it.
+/// Before the first render, row counts and offsets are zero and navigation has no effect.
+///
+/// # Example
+///
+/// ```
+/// use ratatui_core::buffer::Buffer;
+/// use ratatui_core::layout::Rect;
+/// use ratatui_core::widgets::StatefulWidget;
+/// use ratatui_diff::{Diff, DiffDocument, DiffState, Side};
+///
+/// let document = DiffDocument::from_text("old\n", "new\n");
+/// let area = Rect::new(0, 0, 40, 2);
+/// let mut buffer = Buffer::empty(area);
+/// let mut state = DiffState::new();
+/// (&Diff::new(&document)).render(area, &mut buffer, &mut state);
+/// state.end();
+/// let source = state.source_at(state.offset(), Side::Old).unwrap();
+/// assert_eq!(source.line, 1);
+/// assert!(state.scroll_to_source(source));
+/// ```
 #[derive(Debug, Default)]
 pub struct DiffState {
     offset: usize,
@@ -79,45 +164,64 @@ pub struct DiffState {
     key: Option<LayoutKey>,
     rows: Vec<Row>,
     screen: Vec<ScreenRow>,
+    // Absolute screen-row indexes of file and hunk headers, in display order.
     files: Vec<usize>,
     hunks: Vec<usize>,
+    // Sorted (file index, source line, first screen row) tuples for binary lookup.
     old_sources: Vec<(usize, usize, usize)>,
     new_sources: Vec<(usize, usize, usize)>,
     digits: usize,
     max_width: usize,
     content_width: usize,
 }
+
 impl DiffState {
-    /// Construct an empty viewport.
+    /// Construct an empty viewport with no prepared layout. Equivalent to `Default::default()`.
     pub fn new() -> Self {
         Self::default()
     }
-    /// Top displayed row.
+
+    /// Zero-based absolute index of the top displayed row in the last rendered layout.
     pub fn offset(&self) -> usize {
         self.offset
     }
+
     /// Horizontal cell offset, shared between split panes.
     pub fn horizontal_offset(&self) -> usize {
         self.horizontal
     }
-    /// Total displayed rows for the last rendered layout.
+
+    /// Total displayed rows in the last rendered layout, including headers and continuations.
     pub fn row_count(&self) -> usize {
         self.screen.len()
     }
+
     /// Move by displayed rows; negative values move toward the start.
+    ///
+    /// Clamps to the first or final full viewport. Horizontal position is unchanged.
     pub fn scroll_lines(&mut self, lines: isize) {
         self.offset = self.offset.saturating_add_signed(lines);
         self.clamp();
     }
-    /// Move by viewport pages.
+
+    /// Move by multiples of the last rendered viewport height.
+    ///
+    /// Negative values move toward the start. Clamps like [`scroll_lines`](Self::scroll_lines).
     pub fn scroll_pages(&mut self, pages: isize) {
         self.scroll_lines(pages.saturating_mul(self.height.max(1) as isize));
     }
-    /// Move by half pages, rounded up.
+
+    /// Move by half the last rendered viewport height, rounded up.
+    ///
+    /// Negative values move toward the start. Clamps like [`scroll_lines`](Self::scroll_lines).
     pub fn scroll_half_pages(&mut self, pages: isize) {
         self.scroll_lines(pages.saturating_mul(self.height.max(1).div_ceil(2) as isize));
     }
-    /// Move horizontally by terminal cells. Ignored while wrapping.
+
+    /// Move horizontally by terminal cells; negative values move left.
+    ///
+    /// Both split panes share the offset. Movement is bounded by the last layout's content width
+    /// and longest row, including headers. Ignored when the last render used wrapping.
     pub fn scroll_horizontal(&mut self, cells: isize) {
         if self.key.is_some_and(|k| k.wrap) {
             return;
@@ -127,32 +231,53 @@ impl DiffState {
             .horizontal
             .min(self.max_width.saturating_sub(self.content_width));
     }
-    /// Move to the first displayed row.
+
+    /// Move to the first displayed row without changing the horizontal offset.
     pub fn start(&mut self) {
         self.offset = 0;
     }
-    /// Move to the final viewport.
+
+    /// Move to the final full viewport without changing the horizontal offset.
     pub fn end(&mut self) {
         self.offset = self.screen.len();
         self.clamp();
     }
-    /// Jump to the next hunk header.
+
+    /// Jump to the first hunk header strictly below the top displayed row.
+    ///
+    /// Leaves the viewport unchanged if none exists. The target is clamped to the final viewport.
     pub fn next_hunk(&mut self) {
         self.jump(true, false);
     }
-    /// Jump to the previous hunk header.
+
+    /// Jump to the last hunk header strictly above the top displayed row.
+    ///
+    /// Inside a hunk, this returns to its header. At its header, this selects the preceding hunk.
+    /// Leaves the viewport unchanged if none exists.
     pub fn previous_hunk(&mut self) {
         self.jump(false, false);
     }
-    /// Jump to the next file header.
+
+    /// Jump to the first file header strictly below the top displayed row.
+    ///
+    /// Leaves the viewport unchanged if none exists. The target is clamped to the final viewport.
     pub fn next_file(&mut self) {
         self.jump(true, true);
     }
-    /// Jump to the previous file header.
+
+    /// Jump to the last file header strictly above the top displayed row.
+    ///
+    /// Inside a file, this returns to its header. At its header, this selects the preceding file.
+    /// Leaves the viewport unchanged if none exists.
     pub fn previous_file(&mut self) {
         self.jump(false, true);
     }
-    /// Map an absolute displayed row to a numbered source line.
+
+    /// Map a zero-based absolute displayed row to a source line in the last rendered layout.
+    ///
+    /// Add [`offset`](Self::offset) to a viewport-relative row before calling. Returns `None` for
+    /// out-of-range rows, headers, or a side without a source line. Wrapped continuations map to
+    /// the same logical line, including blank padding beside a taller split partner.
     pub fn source_at(&self, displayed_row: usize, side: Side) -> Option<SourcePosition> {
         let row = self.rows.get(self.screen.get(displayed_row)?.row)?;
         if row.header {
@@ -168,7 +293,12 @@ impl DiffState {
             line,
         })
     }
-    /// Scroll to an available source line. Returns false when the patch omits it.
+
+    /// Scroll to a source line's first displayed row in the last rendered layout.
+    ///
+    /// Returns `true` when found, even if final-viewport clamping prevents placing it at the top.
+    /// Returns `false` without moving when the file or line is absent, the patch omits the line,
+    /// or no layout has been rendered. Leaves the horizontal offset unchanged.
     pub fn scroll_to_source(&mut self, position: SourcePosition) -> bool {
         let index = match position.side {
             Side::Old => &self.old_sources,
@@ -184,11 +314,15 @@ impl DiffState {
             false
         }
     }
+
+    // Keep a full final viewport when possible; a zero-height area still has a valid row offset.
     fn clamp(&mut self) {
         self.offset = self
             .offset
             .min(self.screen.len().saturating_sub(self.height.max(1)));
     }
+
+    // Strict comparisons skip the current header; clamping may leave a later target below the top.
     fn jump(&mut self, forward: bool, files: bool) {
         let targets = if files { &self.files } else { &self.hunks };
         let n = if forward {
@@ -202,7 +336,20 @@ impl DiffState {
         }
     }
 }
-/// A borrowed diff widget. Configuration changes affect layout only when necessary.
+
+/// A borrowed presentation of a prepared [`DiffDocument`].
+///
+/// Build this per frame or reuse it by shared reference. Render with
+/// `Frame::render_stateful_widget(&diff, area, &mut state)` or the core
+/// [`StatefulWidget::render`] method. Retain [`DiffState`] to preserve navigation and caches.
+///
+/// # Configuration
+///
+/// Use [`mode`](Self::mode) for unified/split layout, [`theme`](Self::theme) for styles,
+/// [`line_numbers`](Self::line_numbers) and [`word_highlights`](Self::word_highlights) for
+/// emphasis, and [`wrap`](Self::wrap), [`whitespace`](Self::whitespace), and
+/// [`tab_width`](Self::tab_width) for text presentation. The [crate documentation](crate)
+/// includes rendering and navigation examples.
 #[derive(Debug, Clone, Copy)]
 pub struct Diff<'a> {
     document: &'a DiffDocument,
@@ -214,8 +361,13 @@ pub struct Diff<'a> {
     whitespace: bool,
     tab: usize,
 }
+
 impl<'a> Diff<'a> {
     /// Borrow a prepared document using the default unified presentation.
+    ///
+    /// Defaults to the dark theme, visible line numbers and word highlights, four-cell tab stops,
+    /// and no wrapping or whitespace markers. Construction does not prepare layout or change state.
+    /// See the [crate example](crate) for rendering.
     pub fn new(document: &'a DiffDocument) -> Self {
         Self {
             document,
@@ -228,41 +380,69 @@ impl<'a> Diff<'a> {
             tab: 4,
         }
     }
-    /// Select unified or split presentation.
+
+    /// Select unified or split presentation. Defaults to [`ViewMode::Unified`].
+    ///
+    /// The next render rebuilds layout and attempts to retain the source position at the viewport.
     pub fn mode(mut self, mode: ViewMode) -> Self {
         self.mode = mode;
         self
     }
+
     /// Override display styles without invalidating layout.
     pub fn theme(mut self, theme: DiffTheme) -> Self {
         self.theme = theme;
         self
     }
-    /// Enable or disable inline emphasis without invalidating layout.
+
+    /// Enable or disable word highlights without invalidating layout. Enabled by default.
+    ///
+    /// Disabling highlights retains whole-line styles and does not discard prepared ranges.
     pub fn word_highlights(mut self, enabled: bool) -> Self {
         self.words = enabled;
         self
     }
-    /// Show or hide line numbers.
+
+    /// Show or hide line numbers. Visible by default.
+    ///
+    /// Change markers remain visible. The next render recalculates the gutter and wrapped rows.
     pub fn line_numbers(mut self, visible: bool) -> Self {
         self.numbers = visible;
         self
     }
-    /// Wrap long lines instead of scrolling horizontally.
+
+    /// Wrap long lines without splitting graphemes or control-character escapes. Disabled by
+    /// default.
+    ///
+    /// Enabling wrapping resets horizontal scrolling on the next render. Split pairs occupy the
+    /// taller side's wrapped height. A grapheme or escape wider than the pane occupies a blank row.
     pub fn wrap(mut self, wrap: bool) -> Self {
         self.wrap = wrap;
         self
     }
-    /// Display space and tab markers.
+
+    /// Display spaces as `·` and tab starts as `→`. Disabled by default.
+    ///
+    /// Tab padding still fills the remaining cells to the next tab stop. Control characters remain
+    /// visible as escapes regardless of this option. Headers do not use whitespace markers.
     pub fn whitespace(mut self, visible: bool) -> Self {
         self.whitespace = visible;
         self
     }
-    /// Set tab stops in cells. Zero is clamped to one.
+
+    /// Set tab stops in terminal cells, measured from the start of each unwrapped source line.
+    ///
+    /// Defaults to four; zero is clamped to one. The gutter does not contribute to tab alignment.
     pub fn tab_width(mut self, width: usize) -> Self {
         self.tab = width.max(1);
         self
     }
+
+    /// Retain a source anchor, rebuild invalidated layout, then restore and clamp the viewport.
+    ///
+    /// The anchor is the first source line at or below the old offset, preferring the old side.
+    /// Width, gutter, and wrapping changes reuse logical rows; mode, document, tab, or whitespace
+    /// changes rebuild them. Height and styles do not invalidate geometry.
     fn prepare(self, area: Rect, state: &mut DiffState) {
         let key = LayoutKey {
             document: self.document.id,
@@ -278,6 +458,8 @@ impl<'a> Diff<'a> {
             state.clamp();
             return;
         }
+
+        // Screen offsets change with wrapping or mode; a source location survives both.
         let same_document = state.key.is_some_and(|k| k.document == key.document);
         let anchor = if same_document {
             (state.offset..state.screen.len()).find_map(|n| {
@@ -294,6 +476,8 @@ impl<'a> Diff<'a> {
         state.hunks.clear();
         state.old_sources.clear();
         state.new_sources.clear();
+
+        // Width changes reuse glyphs and alignment but still rebuild wrapped-row indexes.
         let rebuild_rows = state.key.is_none_or(|previous| {
             previous.document != key.document
                 || previous.mode != key.mode
@@ -301,92 +485,125 @@ impl<'a> Diff<'a> {
                 || previous.tab != key.tab
         });
         if rebuild_rows {
-            state.rows.clear();
-            let max_number = self
-                .document
-                .files
-                .iter()
-                .flat_map(|f| &f.hunks)
-                .flat_map(|h| &h.lines)
-                .flat_map(|l| [l.old, l.new])
-                .flatten()
-                .max()
-                .unwrap_or(1);
-            state.digits = max_number.to_string().len();
-            for (file, source) in self.document.files.iter().enumerate() {
+            self.build_logical_rows(state);
+        }
+        self.index_screen_rows(area, state);
+
+        // Replacing the document resets navigation; resizing retains the old source anchor.
+        state.key = Some(key);
+        state.offset = if same_document { old_offset } else { 0 };
+        if let Some(anchor) = anchor {
+            state.scroll_to_source(anchor);
+        }
+        if self.wrap || !same_document {
+            state.horizontal = 0;
+        }
+        state.horizontal = state
+            .horizontal
+            .min(state.max_width.saturating_sub(state.content_width));
+        state.clamp();
+    }
+
+    /// Prepare width-independent source alignment and display glyphs.
+    ///
+    /// Each replacement run pairs deletions and insertions in source order, matching refinement.
+    /// Its shorter side receives empty content. Gutter digits use the largest source number in
+    /// the whole document so scrolling does not change column alignment.
+    fn build_logical_rows(self, state: &mut DiffState) {
+        state.rows.clear();
+        let max_number = self
+            .document
+            .files
+            .iter()
+            .flat_map(|f| &f.hunks)
+            .flat_map(|h| &h.lines)
+            .flat_map(|l| [l.old, l.new])
+            .flatten()
+            .max()
+            .unwrap_or(1);
+        state.digits = max_number.to_string().len();
+        for (file, source) in self.document.files.iter().enumerate() {
+            let label = format!(
+                "{} → {}",
+                source.old_path.as_deref().unwrap_or("/dev/null"),
+                source.new_path.as_deref().unwrap_or("/dev/null")
+            );
+            state.rows.push(header(file, None, &label, self.tab));
+            for text in &source.metadata {
+                state.rows.push(header(file, None, text, self.tab));
+            }
+            if source.binary {
+                state
+                    .rows
+                    .push(header(file, None, "Binary change", self.tab));
+            }
+            for (hunk, source) in source.hunks.iter().enumerate() {
                 let label = format!(
-                    "{} → {}",
-                    source.old_path.as_deref().unwrap_or("/dev/null"),
-                    source.new_path.as_deref().unwrap_or("/dev/null")
+                    "@@ -{},{} +{},{} @@",
+                    source.old.start,
+                    source.old.len(),
+                    source.new.start,
+                    source.new.len()
                 );
-                state.rows.push(header(file, None, &label, self.tab));
-                for text in &source.metadata {
-                    state.rows.push(header(file, None, text, self.tab));
-                }
-                if source.binary {
-                    state
-                        .rows
-                        .push(header(file, None, "Binary change", self.tab));
-                }
-                for (hunk, source) in source.hunks.iter().enumerate() {
-                    let label = format!(
-                        "@@ -{},{} +{},{} @@",
-                        source.old.start,
-                        source.old.len(),
-                        source.new.start,
-                        source.new.len()
-                    );
-                    state.rows.push(header(file, Some(hunk), &label, self.tab));
-                    let mut n = 0;
-                    while n < source.lines.len() {
-                        let line = &source.lines[n];
-                        if self.mode == ViewMode::Unified || line.kind == LineKind::Context {
-                            let left = content(line, self.whitespace, self.tab);
-                            let right = (self.mode == ViewMode::Split)
-                                .then(|| content(line, self.whitespace, self.tab));
+                state.rows.push(header(file, Some(hunk), &label, self.tab));
+                let mut n = 0;
+                while n < source.lines.len() {
+                    let line = &source.lines[n];
+                    if self.mode == ViewMode::Unified || line.kind == LineKind::Context {
+                        let left = content(line, self.whitespace, self.tab);
+                        let right = (self.mode == ViewMode::Split)
+                            .then(|| content(line, self.whitespace, self.tab));
+                        state.rows.push(Row {
+                            file,
+                            hunk: Some(hunk),
+                            left,
+                            right,
+                            header: false,
+                        });
+                        n += 1;
+                    } else {
+                        let end = source.lines[n..]
+                            .iter()
+                            .position(|l| l.kind == LineKind::Context)
+                            .map_or(source.lines.len(), |x| n + x);
+                        let deletes: Vec<_> = source.lines[n..end]
+                            .iter()
+                            .filter(|l| l.kind == LineKind::Delete)
+                            .collect();
+                        let inserts: Vec<_> = source.lines[n..end]
+                            .iter()
+                            .filter(|l| l.kind == LineKind::Insert)
+                            .collect();
+                        for i in 0..deletes.len().max(inserts.len()) {
+                            let left = deletes
+                                .get(i)
+                                .map_or_else(empty, |l| content(l, self.whitespace, self.tab));
+                            let right = inserts
+                                .get(i)
+                                .map_or_else(empty, |l| content(l, self.whitespace, self.tab));
                             state.rows.push(Row {
                                 file,
                                 hunk: Some(hunk),
                                 left,
-                                right,
+                                right: Some(right),
                                 header: false,
                             });
-                            n += 1;
-                        } else {
-                            let end = source.lines[n..]
-                                .iter()
-                                .position(|l| l.kind == LineKind::Context)
-                                .map_or(source.lines.len(), |x| n + x);
-                            let deletes: Vec<_> = source.lines[n..end]
-                                .iter()
-                                .filter(|l| l.kind == LineKind::Delete)
-                                .collect();
-                            let inserts: Vec<_> = source.lines[n..end]
-                                .iter()
-                                .filter(|l| l.kind == LineKind::Insert)
-                                .collect();
-                            for i in 0..deletes.len().max(inserts.len()) {
-                                let left = deletes
-                                    .get(i)
-                                    .map_or_else(empty, |l| content(l, self.whitespace, self.tab));
-                                let right = inserts
-                                    .get(i)
-                                    .map_or_else(empty, |l| content(l, self.whitespace, self.tab));
-                                state.rows.push(Row {
-                                    file,
-                                    hunk: Some(hunk),
-                                    left,
-                                    right: Some(right),
-                                    header: false,
-                                });
-                            }
-                            n = end;
                         }
+                        n = end;
                     }
                 }
             }
         }
+    }
+
+    /// Expand logical rows into screen rows and rebuild navigation indexes for this width.
+    ///
+    /// Requires prepared logical rows and cleared screen/navigation vectors. Source indexes point
+    /// to the first wrapped row. Split pairs consume the taller side's height; empty glyph ranges
+    /// pad shorter continuations without creating extra source lines.
+    fn index_screen_rows(self, area: Rect, state: &mut DiffState) {
         state.max_width = 0;
+
         let mut previous_file = None;
         let mut previous_hunk = None;
         for (n, row) in state.rows.iter().enumerate() {
@@ -404,6 +621,8 @@ impl<'a> Diff<'a> {
                 .right
                 .as_ref()
                 .map_or_else(Vec::new, |c| segments(c, width, self.wrap));
+
+            // Record boundaries before expansion so jumps land on headers or first continuations.
             let start = state.screen.len();
             if previous_file != Some(row.file) {
                 state.files.push(start);
@@ -430,21 +649,13 @@ impl<'a> Diff<'a> {
                 });
             }
         }
+
+        // Source lookup is independent of displayed ordering and uses binary search.
         state.old_sources.sort_unstable();
         state.new_sources.sort_unstable();
-        state.key = Some(key);
-        state.offset = if same_document { old_offset } else { 0 };
-        if let Some(anchor) = anchor {
-            state.scroll_to_source(anchor);
-        }
-        if self.wrap || !same_document {
-            state.horizontal = 0;
-        }
-        state.horizontal = state
-            .horizontal
-            .min(state.max_width.saturating_sub(state.content_width));
-        state.clamp();
     }
+
+    // Split content reserves one separator cell; integer division can leave one trailing cell.
     fn pane_width(self, width: u16, header: bool) -> usize {
         if self.mode == ViewMode::Split && !header {
             usize::from(width.saturating_sub(1)) / 2
@@ -452,6 +663,8 @@ impl<'a> Diff<'a> {
             usize::from(width)
         }
     }
+
+    // Width must match the prefixes in `draw`: source numbers, change marker, and spaces.
     fn gutter_width(self, digits: usize, header: bool) -> usize {
         if header {
             0
@@ -464,8 +677,15 @@ impl<'a> Diff<'a> {
         }
     }
 }
+
 impl StatefulWidget for &Diff<'_> {
     type State = DiffState;
+
+    /// Prepare layout, update navigation state, and paint the visible rows.
+    ///
+    /// Clears symbols and styles throughout `area`, including cells beyond the document. Reuses
+    /// cached geometry when possible; changing document identity resets navigation. As with other
+    /// Ratatui widgets, `area` must lie within the supplied buffer.
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut DiffState) {
         self.prepare(area, state);
         buf.set_style(area, self.theme.context);
@@ -522,7 +742,10 @@ impl StatefulWidget for &Diff<'_> {
         }
     }
 }
+
 impl Diff<'_> {
+    // Paint one pane's glyph range. x/y are buffer coordinates; pane/gutter/width are cell counts.
+    // The segment indexes prepared glyphs. Geometry comes from the same layout used for wrapping.
     #[allow(clippy::too_many_arguments)] // Geometry is explicit at the sole cell-writing boundary.
     fn draw(
         self,
@@ -584,11 +807,14 @@ impl Diff<'_> {
         if width == 0 || segment.is_empty() {
             return;
         }
+
+        // Wrapped segments start at their own column; unwrapped segments share the viewport offset.
         let base = if self.wrap {
             content.glyphs[segment.start].column
         } else {
             state.horizontal
         };
+        // Skip off-screen glyphs by column, then draw only complete graphemes inside the pane.
         let first = content.glyphs[segment.clone()].partition_point(|g| g.column + g.width <= base)
             + segment.start;
         for glyph in &content.glyphs[first..segment.end] {
@@ -619,6 +845,8 @@ impl Diff<'_> {
         }
     }
 }
+
+// Padding content has no source identity, marker, or missing-newline annotation.
 fn empty() -> Content {
     Content {
         glyphs: Vec::new(),
@@ -628,6 +856,8 @@ fn empty() -> Content {
         width: 0,
     }
 }
+
+// Headers span both panes and reuse control escaping without source numbers or whitespace marks.
 fn header(file: usize, hunk: Option<usize>, text: &str, tab: usize) -> Row {
     let line = DiffLine::new(LineKind::Context, None, None, text);
     Row {
@@ -638,6 +868,12 @@ fn header(file: usize, hunk: Option<usize>, text: &str, tab: usize) -> Row {
         header: true,
     }
 }
+
+/// Convert source graphemes to display glyphs with cumulative terminal-cell columns.
+///
+/// `tab` must be nonzero. Tabs expand to the next stop, controls become visible escapes, and
+/// standalone zero-width clusters receive a dotted-circle base. Source highlight byte ranges are
+/// mapped before expansion; wrapping and clipping then share the prepared geometry.
 fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
     let mut glyphs = Vec::new();
     let mut column = 0;
@@ -695,6 +931,8 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
             column += width;
         }
     }
+
+    // End-of-file notation is presentation only and has no source highlight range.
     if !line.terminated && (line.old.is_some() || line.new.is_some()) {
         for g in " ⏎".graphemes(true) {
             let width = g.width();
@@ -715,6 +953,12 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
         width: column,
     }
 }
+
+/// Greedily pack whole glyphs into ranges of glyph indexes.
+///
+/// Empty content still produces one range, preserving blank source lines. A glyph wider than the
+/// pane occupies a row by itself; drawing leaves it blank without splitting it or stalling.
+/// With wrapping disabled, the single returned range covers all glyphs.
 fn segments(content: &Content, width: usize, wrap: bool) -> Vec<Range<usize>> {
     if !wrap || content.glyphs.is_empty() {
         return std::iter::once(0..content.glyphs.len()).collect();
