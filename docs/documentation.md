@@ -30,3 +30,34 @@ changes only exchange equivalent wording; complete correctness and validation ga
 
 Run `just fmt-md` and `just fmt-md-check`. Prose wraps at 100 columns; tables are aligned and may be
 wider. Keep these guides self-contained rather than requiring a private preference checkout.
+
+## Writing for Users
+
+Review each paragraph for the question it answers and the action or understanding it enables. README
+and usage docs should help callers choose inputs, render a diff, configure it, and navigate. Keep
+design alternatives and implementation history in architecture or decision docs. A technically
+accurate paragraph can still belong on a different page.
+
+Lead with concrete behavior. Avoid page narration ("this section explains"), teaching-order filler
+("let's break this down"), unearned praise ("straightforward"), and forced contrasts. Name the type,
+input, effect, or limitation instead. Use consistent terms: do not alternate between "word
+highlights" and "word emphasis" merely for variety. Preserve ordinary warmth and sentence variety.
+
+Let examples show syntax. Surrounding prose should explain prerequisites, consequences, or choices
+that readers cannot infer from the calls. For example:
+
+- Before: "Render a shared reference with `render_stateful_widget`."
+- After: "Keep `DiffState` between frames to retain the viewport and cached layout."
+
+Distinguish product behavior from the demonstration's setup. An in-memory backend makes an example
+runnable; it is not a requirement for using the widget. State what transfers to an application and
+link to the runnable viewer when terminal setup or event handling is needed.
+
+Check neighboring paragraphs for repeated ownership descriptions and lifecycle advice. Give each
+fact a useful home; repeat it only where a reader entering at that point needs it. Do not remove
+render-before-navigation requirements or cache lifetime rules just because they mention internals.
+Those details affect caller behavior.
+
+Review the result for meaning as well as tone. Preserve conditions, failure cases, useful examples,
+and justified limitations. A phrase list can flag candidates, but it cannot decide which explanation
+a reader needs. Stop when another pass would only substitute equivalent wording.
