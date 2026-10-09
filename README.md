@@ -33,6 +33,21 @@ This pre-1.0 API may change between minor releases.
 <!-- cargo-rdme end -->
 <!-- rumdl-enable MD013 -->
 
+## Views
+
+Unified view keeps additions and deletions together, with changed words emphasized.
+
+![Unified diff with line numbers and word highlights](https://github.com/joshka/ratatui-diff/releases/download/media-v1/unified.png)
+
+Split view places old source on the left and new source on the right.
+
+![Split diff with aligned old and new source](https://github.com/joshka/ratatui-diff/releases/download/media-v1/split.png)
+
+[Whitespace markers](https://github.com/joshka/ratatui-diff/releases/download/media-v1/whitespace.png)
+make spaces visible. The
+[animated demo](https://github.com/joshka/ratatui-diff/releases/download/media-v1/viewer.gif) holds
+each captioned view for five seconds.
+
 ## Development
 
 See [Contributing](CONTRIBUTING.md), [architecture](docs/architecture.md),
