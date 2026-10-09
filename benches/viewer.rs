@@ -5,7 +5,9 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use ratatui_core::buffer::Buffer;
 use ratatui_core::layout::Rect;
 use ratatui_core::widgets::StatefulWidget;
-use ratatui_diff::{Diff, DiffDocument, DiffState, ViewMode};
+use ratatui_diff::{
+    Diff, DiffDocument, DiffState, Side, SourceBoundary, SourcePosition, SourceSelection, ViewMode,
+};
 
 fn benches(c: &mut Criterion) {
     let mut group = c.benchmark_group("viewer");
@@ -48,6 +50,37 @@ fn benches(c: &mut Criterion) {
                         black_box(&buf);
                     })
                 });
+                let anchor = SourceBoundary {
+                    position: SourcePosition {
+                        file: 0,
+                        side: Side::New,
+                        line: 1,
+                    },
+                    byte: 0,
+                };
+                let last = document.files()[0].hunks[0].lines.last().unwrap();
+                let focus = SourceBoundary {
+                    position: SourcePosition {
+                        line: count,
+                        ..anchor.position
+                    },
+                    byte: last.text.len() + 1,
+                };
+                state.set_selection(&document, SourceSelection { anchor, focus });
+                group.bench_function(
+                    BenchmarkId::new(format!("selection-scroll-{label}"), count),
+                    |b| {
+                        b.iter(|| {
+                            state.scroll_lines(1);
+                            if state.offset() + 30 >= state.row_count() {
+                                state.start();
+                            }
+                            (&widget).render(area, &mut buf, &mut state);
+                            black_box(&buf);
+                        })
+                    },
+                );
+                state.clear_selection();
                 group.bench_function(BenchmarkId::new(format!("resize-{label}"), count), |b| {
                     b.iter(|| {
                         let next = if state_width == 100 { 99 } else { 100 };

@@ -53,3 +53,9 @@ or resize events precede drawing. Source ranges identify line-local UTF-8 bytes,
 final-newline cues retain only line identities. See
 [interaction coordinates](interaction-coordinates.md) for Unicode, padding, and missing-context
 contracts.
+
+Selection retains source boundaries in state, independently of viewport geometry. Rendering reuses
+hit-testing glyph byte ranges and composes the selection overlay after word and whitespace styles.
+Extraction uses numbered source lines and rejects omitted context. The
+[selection contract](selection.md) defines ordering, source-line keyboard movement, line endings,
+and host pointer/copy integration.

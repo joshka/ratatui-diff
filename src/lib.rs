@@ -114,6 +114,20 @@
 //! resets navigation on the next render. Theme and word-highlight changes preserve layout. Give
 //! each independently navigated pane its own state, even when both borrow the same document.
 //!
+//! # Select source for copying
+//!
+//! Keep anchor and focus in [`DiffState::set_selection`], then extend focus with
+//! [`SelectionMotion`] from host key bindings. Pointer handlers can convert a hit [`SourceRange`]
+//! with [`start_boundary`](SourceRange::start_boundary) and
+//! [`end_boundary`](SourceRange::end_boundary). Selection stays within one file and side, survives
+//! resizing and view changes, and clears on document replacement.
+//!
+//! [`selected_text`](DiffState::selected_text) returns original source bytes for the host's
+//! clipboard integration. It preserves tabs, controls, CRLF, and final-newline state; it excludes
+//! gutters, wrapping, padding, and display notation. Invalid grapheme boundaries and missing patch
+//! context are rejected. [`Diff::selection_style`] controls the overlay applied after word
+//! highlights.
+//!
 //! # Large documents
 //!
 //! Comparison is synchronous; prepare large documents outside the event loop. Rendering reuses the
@@ -128,9 +142,11 @@
 mod compare;
 mod model;
 mod parse;
+mod selection;
 mod theme;
 mod widget;
 
 pub use model::{DiffDocument, DiffError, DiffFile, DiffLine, Hunk, LineKind, Side};
+pub use selection::{SelectionMotion, SourceBoundary, SourceSelection};
 pub use theme::DiffTheme;
 pub use widget::{Diff, DiffState, HitTest, SourcePosition, SourceRange, ViewMode};

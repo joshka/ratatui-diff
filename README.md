@@ -117,6 +117,20 @@ Resizing or switching modes retains the nearest available source anchor. Replaci
 resets navigation on the next render. Theme and word-highlight changes preserve layout. Give
 each independently navigated pane its own state, even when both borrow the same document.
 
+## Select source for copying
+
+Keep anchor and focus in [`DiffState::set_selection`](https://docs.rs/ratatui-diff/latest/ratatui_diff/widget/struct.DiffState.html#method.set_selection), then extend focus with
+[`SelectionMotion`](https://docs.rs/ratatui-diff/latest/ratatui_diff/selection/enum.SelectionMotion.html) from host key bindings. Pointer handlers can convert a hit [`SourceRange`](https://docs.rs/ratatui-diff/latest/ratatui_diff/widget/struct.SourceRange.html)
+with [`start_boundary`](https://docs.rs/ratatui-diff/latest/ratatui_diff/widget/struct.SourceRange.html#method.start_boundary) and
+[`end_boundary`](https://docs.rs/ratatui-diff/latest/ratatui_diff/widget/struct.SourceRange.html#method.end_boundary). Selection stays within one file and side, survives
+resizing and view changes, and clears on document replacement.
+
+[`selected_text`](https://docs.rs/ratatui-diff/latest/ratatui_diff/widget/struct.DiffState.html#method.selected_text) returns original source bytes for the host's
+clipboard integration. It preserves tabs, controls, CRLF, and final-newline state; it excludes
+gutters, wrapping, padding, and display notation. Invalid grapheme boundaries and missing patch
+context are rejected. [`Diff::selection_style`](https://docs.rs/ratatui-diff/latest/ratatui_diff/widget/struct.Diff.html#method.selection_style) controls the overlay applied after word
+highlights.
+
 ## Large documents
 
 Comparison is synchronous; prepare large documents outside the event loop. Rendering reuses the
