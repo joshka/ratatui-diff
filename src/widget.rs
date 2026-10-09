@@ -44,6 +44,54 @@ pub struct SourcePosition {
     pub line: usize,
 }
 
+/// A half-open UTF-8 byte range within a source line, excluding its line ending.
+///
+/// Retain only with the document that produced it. Rendering never reconstructs omitted context.
+/// Public field construction is unchecked; hit-testing returns valid grapheme ranges.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceRange {
+    /// File, side, and one-based line identity.
+    pub position: SourcePosition,
+
+    /// Complete source grapheme bytes; expanded tabs and escapes share this range.
+    pub bytes: Range<usize>,
+}
+
+/// The semantic region occupying a cell in the last rendered diff viewport.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HitTest {
+    /// Source text, with both sides available for unified context.
+    Source {
+        /// Original source range, when available.
+        old: Option<SourceRange>,
+        /// Modified source range, when available.
+        new: Option<SourceRange>,
+    },
+    /// A line-number/change-marker gutter, without source bytes.
+    Gutter {
+        /// Original source line, when available.
+        old: Option<SourcePosition>,
+        /// Modified source line, when available.
+        new: Option<SourcePosition>,
+    },
+    /// A file, metadata, or hunk header.
+    Header {
+        /// Zero-based file index.
+        file: usize,
+    },
+    /// Presentation-only missing-final-newline notation.
+    FinalNewline {
+        /// Original source line, when available.
+        old: Option<SourcePosition>,
+        /// Modified source line, when available.
+        new: Option<SourcePosition>,
+    },
+    /// The separator between split panes.
+    Separator,
+    /// Blank cells, including clipped glyphs and exhausted split continuations.
+    Padding,
+}
+
 /// A display unit after tab/control expansion, positioned in terminal cells.
 ///
 /// Ordinary units contain one grapheme; tabs become individual spaces and a control escape stays
@@ -52,6 +100,8 @@ pub struct SourcePosition {
 #[derive(Debug)]
 struct Glyph {
     text: String,
+    // Synthetic final-newline notation has no source byte range.
+    bytes: Option<Range<usize>>,
 
     /// Cell offset from the start of the unwrapped content, excluding the gutter.
     column: usize,
@@ -165,6 +215,8 @@ struct LayoutKey {
 /// ```
 #[derive(Debug, Default)]
 pub struct DiffState {
+    // Last painted rectangle and offsets; navigation must redraw before cell lookup.
+    rendered: Option<(Rect, usize, usize)>,
     offset: usize,
     horizontal: usize,
     height: usize,
@@ -201,6 +253,144 @@ impl DiffState {
     /// Total displayed rows in the last rendered layout, including headers and continuations.
     pub fn row_count(&self) -> usize {
         self.screen.len()
+    }
+
+    /// Discard cell mapping before a host changes geometry, options, or documents.
+    ///
+    /// The next render refreshes it. Source/navigation layout remains cached.
+    pub fn invalidate_hit_testing(&mut self) {
+        self.rendered = None;
+    }
+
+    /// Inspect an absolute terminal cell in the most recent rendered viewport.
+    ///
+    /// Returns `None` outside that viewport, before rendering, or after navigation until redraw.
+    /// Widget changes take effect at rendering; invalidate explicitly if events arrive first.
+    /// Source ranges use line-local UTF-8 bytes and include whole graphemes, tabs, and escapes.
+    /// Blank clipping cells never claim source bytes. Unified context returns both sides.
+    ///
+    /// ```
+    /// use ratatui_core::buffer::Buffer;
+    /// use ratatui_core::layout::Rect;
+    /// use ratatui_core::widgets::StatefulWidget;
+    /// use ratatui_diff::{Diff, DiffDocument, DiffState, HitTest};
+    ///
+    /// let document = DiffDocument::from_text("", "界\n");
+    /// let area = Rect::new(10, 5, 20, 4);
+    /// let mut state = DiffState::new();
+    /// let widget = Diff::new(&document).line_numbers(false);
+    /// (&widget).render(area, &mut Buffer::empty(area), &mut state);
+    /// let Some(HitTest::Source {
+    ///     new: Some(source), ..
+    /// }) = state.hit_test(12, 7)
+    /// else {
+    ///     panic!("the second cell of 界 belongs to the same source grapheme");
+    /// };
+    /// assert_eq!(source.bytes, 0..3);
+    /// assert_eq!(source.position.line, 1);
+    /// ```
+    pub fn hit_test(&self, x: u16, y: u16) -> Option<HitTest> {
+        let (area, offset, horizontal) = self.rendered?;
+        if x < area.x
+            || x >= area.right()
+            || y < area.y
+            || y >= area.bottom()
+            || offset != self.offset
+            || horizontal != self.horizontal
+        {
+            return None;
+        }
+        let Some(screen) = self.screen.get(offset + usize::from(y - area.y)) else {
+            return Some(HitTest::Padding);
+        };
+        let row = &self.rows[screen.row];
+        if row.header {
+            return Some(HitTest::Header { file: row.file });
+        }
+        let key = self.key?;
+        let split = key.mode == ViewMode::Split;
+        let pane = if split {
+            usize::from(area.width.saturating_sub(1)) / 2
+        } else {
+            usize::from(area.width)
+        };
+        let mut column = usize::from(x - area.x);
+        if split && column == pane {
+            return Some(HitTest::Separator);
+        }
+        let right = split && column > pane;
+        if right {
+            column -= pane + 1;
+        }
+        if column >= pane {
+            return Some(HitTest::Padding);
+        }
+        let content = if right {
+            row.right.as_ref()?
+        } else {
+            &row.left
+        };
+        let segment = if right { &screen.right } else { &screen.left };
+        let position = |side, line: Option<usize>| {
+            line.map(|line| SourcePosition {
+                file: row.file,
+                side,
+                line,
+            })
+        };
+        let old = if right {
+            None
+        } else {
+            position(Side::Old, content.old)
+        };
+        let new = if split && !right {
+            None
+        } else {
+            position(Side::New, content.new)
+        };
+        let gutter = if !key.numbers {
+            1
+        } else if split {
+            self.digits + 2
+        } else {
+            self.digits * 2 + 3
+        };
+        let gutter = gutter.min(pane);
+        if screen.continuation && segment.is_empty() || old.is_none() && new.is_none() {
+            return Some(HitTest::Padding);
+        }
+        if column < gutter {
+            return Some(HitTest::Gutter { old, new });
+        }
+        let width = pane - gutter;
+        let glyphs = &content.glyphs[segment.clone()];
+        let base = if key.wrap {
+            glyphs.first().map_or(0, |g| g.column)
+        } else {
+            horizontal
+        };
+        let target = base + column - gutter;
+        let index = glyphs.partition_point(|g| g.column + g.width <= target);
+        let Some(glyph) = glyphs.get(index) else {
+            return Some(HitTest::Padding);
+        };
+        if glyph.column < base || glyph.column > target || glyph.column + glyph.width > base + width
+        {
+            return Some(HitTest::Padding);
+        }
+        Some(match &glyph.bytes {
+            Some(bytes) => HitTest::Source {
+                old: old.map(|position| SourceRange {
+                    position,
+                    bytes: bytes.clone(),
+                }),
+                new: new.map(|position| SourceRange {
+                    position,
+                    bytes: bytes.clone(),
+                }),
+            },
+            None => HitTest::FinalNewline { old, new },
+        })
     }
 
     /// Move by displayed rows; negative values move toward the start.
@@ -699,6 +889,7 @@ impl StatefulWidget for &Diff<'_> {
     /// Ratatui widgets, `area` must lie within the supplied buffer.
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut DiffState) {
         self.prepare(area, state);
+        state.rendered = Some((area, state.offset, state.horizontal));
         buf.set_style(area, self.theme.context);
         for y in area.y..area.bottom() {
             for x in area.x..area.right() {
@@ -959,6 +1150,7 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
                     } else {
                         " ".into()
                     },
+                    bytes: Some(byte..byte + g.len()),
                     column,
                     width: 1,
                     emphasized,
@@ -992,6 +1184,7 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
             };
             glyphs.push(Glyph {
                 text,
+                bytes: Some(byte..byte + g.len()),
                 column,
                 width,
                 emphasized,
@@ -1007,6 +1200,7 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
             let width = g.width();
             glyphs.push(Glyph {
                 text: g.into(),
+                bytes: None,
                 column,
                 width,
                 emphasized: false,

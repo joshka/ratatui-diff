@@ -133,4 +133,4 @@ mod widget;
 
 pub use model::{DiffDocument, DiffError, DiffFile, DiffLine, Hunk, LineKind, Side};
 pub use theme::DiffTheme;
-pub use widget::{Diff, DiffState, SourcePosition, ViewMode};
+pub use widget::{Diff, DiffState, HitTest, SourcePosition, SourceRange, ViewMode};
