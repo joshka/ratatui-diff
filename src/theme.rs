@@ -4,8 +4,9 @@ use ratatui_core::style::{Color, Modifier, Style};
 
 /// Styles for each diff role. Fields can be overridden independently.
 ///
-/// [`Default`] selects [`dark`](Self::dark). Presets leave the terminal background unspecified;
-/// their appearance depends on the terminal palette. Word styles are patched over line styles,
+/// [`Default`] selects [`dark`](Self::dark), which uses terminal palette colors.
+/// [`aardvark_ink`](Self::aardvark_ink) sets explicit RGB foregrounds and backgrounds.
+/// Word styles are patched over line styles,
 /// while gutters have a separate style. Changing a widget's theme preserves its layout cache.
 ///
 /// # Example
@@ -67,6 +68,46 @@ impl DiffTheme {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
             gutter: Style::default().fg(Color::DarkGray),
+        }
+    }
+
+    /// An RGB preset complementing the Aardvark Ink terminal palette.
+    ///
+    /// Uses green additions, red deletions, and stronger backgrounds for changed words.
+    /// Sets the widget's foreground and background; the host configures the surrounding terminal.
+    /// Requires truecolor support. Use [`Self::dark`] for terminal palette colors or
+    /// [`Self::monochrome`] for markers and underlined word highlights without explicit colors.
+    ///
+    /// ```
+    /// use ratatui_diff::{Diff, DiffDocument, DiffTheme};
+    ///
+    /// let document = DiffDocument::from_text("old\n", "new\n");
+    /// let diff = Diff::new(&document).theme(DiffTheme::aardvark_ink());
+    /// ```
+    pub fn aardvark_ink() -> Self {
+        // Aardvark Ink's bright green/red/cyan retain contrast on tinted ink backgrounds.
+        Self {
+            context: Style::default()
+                .fg(Color::Rgb(0xb4, 0xbc, 0xca))
+                .bg(Color::Rgb(0x0f, 0x14, 0x1f)),
+            insert: Style::default()
+                .fg(Color::Rgb(0x75, 0xcf, 0x84))
+                .bg(Color::Rgb(0x16, 0x2b, 0x25)),
+            delete: Style::default()
+                .fg(Color::Rgb(0xe4, 0x83, 0x83))
+                .bg(Color::Rgb(0x30, 0x20, 0x2a)),
+            insert_word: Style::default()
+                .bg(Color::Rgb(0x25, 0x48, 0x35))
+                .add_modifier(Modifier::BOLD),
+            delete_word: Style::default()
+                .bg(Color::Rgb(0x4b, 0x25, 0x30))
+                .add_modifier(Modifier::BOLD),
+            header: Style::default()
+                .fg(Color::Rgb(0x52, 0xc4, 0xc0))
+                .bg(Color::Rgb(0x0f, 0x14, 0x1f))
+                .add_modifier(Modifier::BOLD),
+            // Inherit row backgrounds so numbers and +/- markers remain part of each row.
+            gutter: Style::default().fg(Color::Rgb(0xb4, 0xbc, 0xca)),
         }
     }
 

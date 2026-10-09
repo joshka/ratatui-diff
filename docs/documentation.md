@@ -61,3 +61,6 @@ Those details affect caller behavior.
 Review the result for meaning as well as tone. Preserve conditions, failure cases, useful examples,
 and justified limitations. A phrase list can flag candidates, but it cannot decide which explanation
 a reader needs. Stop when another pass would only substitute equivalent wording.
+
+Show a color swatch beside hexadecimal color values in visual documentation. Keep the value readable
+and selectable; the swatch supplements the label.

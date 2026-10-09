@@ -41,3 +41,9 @@ media:
     mkdir -p media
     cargo build --example viewer --locked
     python3 scripts/capture.py
+# Generate the local visual guide without publishing media.
+appearance:
+    mkdir -p media
+    cargo build --example viewer --locked
+    python3 scripts/capture-appearance.py
+    pandoc docs/appearance.md --standalone --embed-resources --resource-path=docs:. --css=scripts/appearance.css --lua-filter=scripts/color-swatches.lua --metadata pagetitle="Choosing a diff presentation" --output=media/appearance.html

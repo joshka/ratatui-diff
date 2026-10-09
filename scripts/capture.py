@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 root = Path(__file__).resolve().parent.parent
 metadata = json.loads(subprocess.check_output(
@@ -11,4 +12,5 @@ metadata = json.loads(subprocess.check_output(
 viewer = Path(metadata["target_directory"]) / "debug" / "examples" / "viewer"
 env = os.environ.copy()
 env["RATATUI_DIFF_VIEWER"] = str(viewer)
-subprocess.run(["betamax", "run", "examples/viewer.tape"], cwd=root, env=env, check=True)
+tape = sys.argv[1] if len(sys.argv) > 1 else "examples/viewer.tape"
+subprocess.run(["betamax", "run", tape], cwd=root, env=env, check=True)
