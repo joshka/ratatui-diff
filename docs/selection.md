@@ -16,7 +16,12 @@ It cannot cross a missing line. Vertical movement preserves the byte offset, cla
 grapheme boundary in the adjacent source line. Line start/end refer to source text, independently of
 wrapping. Anchor remains fixed when focus moves backward. Resize, scrolling, theme, and view-mode
 changes keep the selection; rendering a replacement document clears it. A cloned document retains
-identity. Keyboard movement changes focus only; hosts choose when to scroll it into view.
+identity. Keyboard movement changes focus only; hosts call `reveal_selection()` when focus should
+become visible on the next render. The request uses that frame's layout, reveals the following
+grapheme (or the final grapheme at end/LF), and takes precedence over pending search navigation.
+Empty lines and zero-width content have no source glyph to reveal. Scrolling clamps at the final
+viewport; subsequent manual scrolling remains possible. Hosts can request again after presentation
+changes without changing either source boundary.
 
 Selection styling applies after the row style, word highlights, and synthetic whitespace treatment.
 Only glyphs whose original byte ranges intersect selection receive the overlay. Tabs highlight all
@@ -39,6 +44,7 @@ let caret = SourceBoundary {
 let mut state = DiffState::new();
 assert!(state.set_selection(&document, SourceSelection { anchor: caret, focus: caret }));
 assert!(state.extend_selection(&document, SelectionMotion::Next));
+assert!(state.reveal_selection());
 assert_eq!(state.selected_text(&document).as_deref(), Some("n"));
 // Pass the returned String to the host's clipboard integration.
 ```

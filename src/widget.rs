@@ -222,6 +222,7 @@ pub struct DiffState {
     rendered: Option<(Rect, usize, usize)>,
     selection: Option<crate::SourceSelection>,
     selection_document: Option<u64>,
+    reveal_selection: bool,
     offset: usize,
     horizontal: usize,
     height: usize,
@@ -268,6 +269,7 @@ impl DiffState {
     pub fn clear_selection(&mut self) {
         self.selection = None;
         self.selection_document = None;
+        self.reveal_selection = false;
     }
 
     /// Extend focus using source graphemes and line boundaries; anchor stays fixed.
@@ -289,6 +291,23 @@ impl DiffState {
         };
         selection.focus = focus;
         self.set_selection(document, selection)
+    }
+
+    /// Reveal the selection focus on the next render, without changing its source boundaries.
+    ///
+    /// Returns `false` when no selection exists. Reveals the grapheme after the boundary, or the
+    /// final source grapheme at end of line, using the next frame's wrapping and pane geometry.
+    /// Moves only enough to include that grapheme, clamping at the final viewport. Empty lines
+    /// reveal their source row; zero-width content cannot display a glyph. End/LF uses the final
+    /// source grapheme. Successful requests invalidate hit-testing until the next render.
+    /// Takes precedence over a pending search reveal in that frame. Subsequent manual scrolling
+    /// remains under host control; layout changes do not automatically reveal selection focus.
+    pub fn reveal_selection(&mut self) -> bool {
+        self.reveal_selection = self.selection.is_some();
+        if self.reveal_selection {
+            self.rendered = None;
+        }
+        self.reveal_selection
     }
 
     /// Obtain exact selected text for host-controlled copying, without clipboard I/O.
@@ -368,6 +387,7 @@ impl DiffState {
             (Some(n), false) => (n + count - 1) % count,
         });
         self.search.reveal = true;
+        self.rendered = None;
         true
     }
 
@@ -379,14 +399,18 @@ impl DiffState {
         let Some(found) = self.search.active.map(|n| &self.search.matches[n]) else {
             return;
         };
-        let sources = match found.position.side {
+        let position = found.position;
+        let byte = found.bytes.start;
+        self.reveal_boundary(position, byte, false);
+    }
+
+    fn reveal_boundary(&mut self, position: SourcePosition, byte: usize, selection: bool) {
+        let sources = match position.side {
             Side::Old => &self.old_sources,
             Side::New => &self.new_sources,
         };
-        let Ok(n) = sources
-            .binary_search_by_key(&(found.position.file, found.position.line), |&(f, l, _)| {
-                (f, l)
-            })
+        let Ok(n) =
+            sources.binary_search_by_key(&(position.file, position.line), |&(f, l, _)| (f, l))
         else {
             return;
         };
@@ -394,22 +418,26 @@ impl DiffState {
         let row_index = self.screen[first].row;
         let row = &self.rows[row_index];
         let right =
-            self.key.is_some_and(|k| k.mode == ViewMode::Split) && found.position.side == Side::New;
+            self.key.is_some_and(|k| k.mode == ViewMode::Split) && position.side == Side::New;
         let content = if right {
             row.right.as_ref().unwrap_or(&row.left)
         } else {
             &row.left
         };
-        let glyph = content.glyphs.partition_point(|g| {
-            g.bytes
-                .as_ref()
-                .is_some_and(|bytes| bytes.end <= found.bytes.start)
-        });
-        let Some(g) = content.glyphs.get(glyph) else {
-            return;
+        let glyph = content
+            .glyphs
+            .partition_point(|g| g.bytes.as_ref().is_some_and(|bytes| bytes.end <= byte));
+        // End/LF boundaries reveal the final source glyph, never a synthetic newline cue.
+        let glyph = if content.glyphs.get(glyph).is_some_and(|g| g.bytes.is_some()) {
+            Some(glyph)
+        } else {
+            content.glyphs.iter().rposition(|g| g.bytes.is_some())
         };
+        let g = glyph.and_then(|n| content.glyphs.get(n));
         let wrapped = self.key.is_some_and(|k| k.wrap);
-        let target = if wrapped {
+        let target = if let Some(glyph) = glyph
+            && wrapped
+        {
             self.screen.partition_point(|s| {
                 s.row < row_index
                     || (s.row == row_index
@@ -423,15 +451,23 @@ impl DiffState {
             first
         };
         if target < self.offset || target >= self.offset.saturating_add(self.height) {
-            self.offset = target;
+            self.offset = if !selection || target < self.offset {
+                target
+            } else {
+                target.saturating_sub(self.height.saturating_sub(1))
+            };
         }
-        if !wrapped
+        if let Some(g) = g
+            && !wrapped
             && (g.column < self.horizontal
                 || g.column + g.width > self.horizontal + self.content_width)
         {
-            self.horizontal = g
-                .column
-                .min(self.max_width.saturating_sub(self.content_width));
+            let horizontal = if !selection || g.column < self.horizontal {
+                g.column
+            } else {
+                (g.column + g.width).saturating_sub(self.content_width)
+            };
+            self.horizontal = horizontal.min(self.max_width.saturating_sub(self.content_width));
         }
         self.clamp();
     }
@@ -1114,7 +1150,14 @@ impl StatefulWidget for &Diff<'_> {
     /// Ratatui widgets, `area` must lie within the supplied buffer.
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut DiffState) {
         self.prepare(area, state);
-        state.reveal_match();
+        if std::mem::take(&mut state.reveal_selection) {
+            state.search.reveal = false;
+            if let Some(selection) = state.selection {
+                state.reveal_boundary(selection.focus.position, selection.focus.byte, true);
+            }
+        } else {
+            state.reveal_match();
+        }
         state.rendered = Some((area, state.offset, state.horizontal));
         buf.set_style(area, self.theme.context);
         for y in area.y..area.bottom() {

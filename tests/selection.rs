@@ -299,3 +299,89 @@ fn custom_overlay_preserves_word_modifiers_and_source_mapping() {
         matches!(state.hit_test(x,y), Some(HitTest::Source { new: Some(after), .. }) if after == range)
     );
 }
+
+#[test]
+fn explicit_focus_reveal_uses_graphemes_and_next_frame_geometry() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::widgets::StatefulWidget;
+    use ratatui_diff::{Diff, DiffState, ViewMode};
+
+    let document = DiffDocument::from_text("", "start\n0123456789界e\u{301}end\n\nlast\n");
+    let mut state = DiffState::new();
+    assert!(!state.reveal_selection());
+    let selection = SourceSelection {
+        anchor: point(Side::New, 1, 0),
+        focus: point(Side::New, 2, 13),
+    };
+    let area = Rect::new(0, 0, 12, 3);
+    let mut buffer = Buffer::empty(area);
+    let widget = Diff::new(&document).line_numbers(false);
+    (&widget).render(area, &mut buffer, &mut state);
+    state.set_search(&document, "start", None);
+    assert!(state.next_match());
+    assert!(state.set_selection(&document, selection));
+    assert!(state.reveal_selection());
+    assert!(state.hit_test(1, 2).is_none());
+    (&widget).render(area, &mut buffer, &mut state);
+    assert!(
+        buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() == "e\u{301}")
+    );
+    assert!(state.horizontal_offset() > 0);
+    assert_eq!(state.selection(), Some(selection));
+    let revealed = state.horizontal_offset();
+    (&widget).render(area, &mut buffer, &mut state);
+    assert_eq!(
+        state.horizontal_offset(),
+        revealed,
+        "search must not oscillate back"
+    );
+    state.scroll_horizontal(-100);
+    (&widget).render(area, &mut buffer, &mut state);
+    assert_eq!(
+        state.horizontal_offset(),
+        0,
+        "manual navigation remains possible"
+    );
+
+    assert!(state.reveal_selection());
+    let widget = widget.mode(ViewMode::Split).wrap(true);
+    (&widget).render(area, &mut buffer, &mut state);
+    assert!(
+        buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() == "e\u{301}")
+    );
+    assert_eq!(state.selection(), Some(selection));
+
+    for byte in [17, 18] {
+        let end = SourceSelection {
+            focus: point(Side::New, 2, byte),
+            ..selection
+        };
+        assert!(state.set_selection(&document, end));
+        assert!(state.reveal_selection());
+        (&widget).render(area, &mut buffer, &mut state);
+        assert!(buffer.content().iter().any(|cell| cell.symbol() == "d"));
+    }
+    let blank = SourceSelection {
+        focus: point(Side::New, 3, 0),
+        ..selection
+    };
+    assert!(state.set_selection(&document, blank));
+    assert!(state.reveal_selection());
+    (&widget).render(area, &mut buffer, &mut state);
+    assert!(
+        (state.offset()..state.offset() + 3)
+            .any(|row| state.source_at(row, Side::New).is_some_and(|p| p.line == 3))
+    );
+    for area in [Rect::new(0, 0, 0, 0), Rect::new(0, 0, 1, 1)] {
+        assert!(state.reveal_selection());
+        (&widget).render(area, &mut Buffer::empty(area), &mut state);
+        assert_eq!(state.selection(), Some(blank));
+    }
+}
