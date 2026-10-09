@@ -48,8 +48,31 @@ fn unicode_text() -> Result<DiffDocument, Box<dyn Error>> {
 }
 
 fn whitespace() -> Result<DiffDocument, Box<dyn Error>> {
-    let old = "section:\r\n\tname: old\r\n\tvalues: one\t two  \r\nfinal: no newline";
-    let new = "section:\r\n\tname: new\r\n\tvalues: one\t three \r\n\tadded: tab indentation\r\nfinal: has newline\r\n";
+    let old = concat!(
+        "section:\r\n",
+        "    spaces:\r\n",
+        "        name: old\r\n",
+        "            values: one  two  \r\n",
+        "\ttabs:\r\n",
+        "\t\tname: old\r\n",
+        "\t\t\tvalues: one\t two  \r\n",
+        "    mixed:\r\n",
+        "    \t    enabled: false\r\n",
+        "final: no newline",
+    );
+    let new = concat!(
+        "section:\r\n",
+        "    spaces:\r\n",
+        "        name: new\r\n",
+        "            values: one  three \r\n",
+        "\ttabs:\r\n",
+        "\t\tname: new\r\n",
+        "\t\t\tvalues: one\t three \r\n",
+        "    mixed:\r\n",
+        "    \t    enabled: true\r\n",
+        "    \t\tadded: mixed indentation\r\n",
+        "final: has newline\r\n",
+    );
     Ok(DiffDocument::new(vec![compared_file(
         "fixtures/whitespace.txt",
         old,

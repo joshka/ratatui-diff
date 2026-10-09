@@ -59,6 +59,7 @@ hunks; every edited source line is replaced by three lines. Sources are bounded 
 cargo run --example viewer --locked -- --fixture whitespace --aardvark-ink
 ```
 
+1. Compare three levels of space and tab indentation, plus mixed indentation.
 1. Press `s` and `t`. Tabs appear as arrows, spaces as dots, and retained CR characters as `\u{d}`.
    The old final line has an unterminated-line marker; the new final line retains CRLF.
 1. Press `w`, then `n`, `i`, and `m` to inspect wrapping, hidden numbers, disabled word highlights,
