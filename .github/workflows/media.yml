@@ -38,4 +38,4 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$RELEASE_TAG" media/viewer.png media/viewer.gif --clobber
+        run: gh release upload "$RELEASE_TAG" media/unified.png media/split.png media/whitespace.png media/viewer.gif --clobber

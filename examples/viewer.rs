@@ -16,8 +16,40 @@ fn main() -> Result<(), Box<dyn Error>> {
     result
 }
 fn run(terminal: &mut DefaultTerminal) -> Result<(), Box<dyn Error>> {
-    let old = "// A small greeting\nfn greeting(name: &str) -> String {\n    format!(\"Hello, {name}!\")\n}\n\nfn main() {\n    println!(\"{}\", greeting(\"world\"));\n}\n";
-    let new = "// A friendly greeting\nfn greeting(name: &str) -> String {\n    format!(\"Welcome, {name}!\")\n}\n\nfn main() {\n    let name = \"Ratatui 🐭\";\n    println!(\"{}\", greeting(name));\n}\n";
+    let old = r#"use std::time::Duration;
+
+struct Settings {
+    theme: &'static str,
+    context: usize,
+    timeout: Duration,
+}
+
+fn settings() -> Settings {
+    Settings {
+        theme: "default",
+        context: 3,
+        timeout: Duration::from_secs(5),
+    }
+}
+"#;
+    let new = r#"use std::time::Duration;
+
+struct Settings {
+    theme: &'static str,
+    context: usize,
+    timeout: Duration,
+    show_line_numbers: bool,
+}
+
+fn settings() -> Settings {
+    Settings {
+        theme: "aardvark-ink",
+        context: 5,
+        timeout: Duration::from_secs(10),
+        show_line_numbers: true,
+    }
+}
+"#;
     let document = DiffDocument::from_text(old, new);
     let mut state = DiffState::new();
     let mut mode = ViewMode::Unified;
@@ -28,7 +60,10 @@ fn run(terminal: &mut DefaultTerminal) -> Result<(), Box<dyn Error>> {
     loop {
         terminal.draw(|frame| {
             let area = frame.area();
-            let body = Rect::new(area.x, area.y, area.width, area.height.saturating_sub(1));
+            let title = format!("{mode:?} view | word highlights | line numbers {} | whitespace {}",
+                if numbers { "on" } else { "off" }, if whitespace { "on" } else { "off" });
+            frame.render_widget(Paragraph::new(title), Rect::new(area.x, area.y, area.width, 1));
+            let body = Rect::new(area.x, area.y.saturating_add(1), area.width, area.height.saturating_sub(2));
             let widget = Diff::new(&document).mode(mode).wrap(wrap).whitespace(whitespace)
                 .line_numbers(numbers).theme(theme);
             frame.render_stateful_widget(&widget, body, &mut state);
