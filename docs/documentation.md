@@ -11,7 +11,8 @@ translate syntax. Reusable explanations reduce repeated investigation by people 
 
 Put caller contracts in Rustdoc, local invariants beside code, cross-module explanations in
 architecture docs, and dependency choices in their decision document. Keep one canonical owner and
-link to it. Change-specific chronology belongs in PRs or jj descriptions.
+link to it. Change-specific context belongs in PRs or jj descriptions. Follow
+[Pull Request Descriptions](pr-writing.md) for review prose.
 
 Ground rationale in code, tests, history, measurements, or attributed decisions before writing it.
 Current code establishes behavior but may not establish intent. Distinguish verified facts,
