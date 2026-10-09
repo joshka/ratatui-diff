@@ -22,8 +22,8 @@ Selection styling applies after the row style, word highlights, and synthetic wh
 Only glyphs whose original byte ranges intersect selection receive the overlay. Tabs highlight all
 expanded cells; wide graphemes and control notation highlight as a unit. Headers, number gutters,
 blank partners, exhausted wrapped segments, and padding remain outside selection. A selected LF has
-no source glyph, so it has no painted cell. A future host-supplied search overlay should compose
-before selection, with selection taking precedence for attributes it sets.
+no source glyph, so it has no painted cell. Search overlays compose before selection, with selection
+taking precedence for attributes it sets.
 
 ## Host example
 

@@ -6,8 +6,8 @@ use ratatui_core::style::{Color, Modifier, Style};
 ///
 /// [`Default`] selects [`dark`](Self::dark), which uses terminal palette colors.
 /// [`aardvark_ink`](Self::aardvark_ink) sets explicit RGB foregrounds and backgrounds.
-/// Word styles are patched over line styles,
-/// while gutters have a separate style. Changing a widget's theme preserves its layout cache.
+/// Word styles are patched over line styles, followed by search emphasis. Gutters have a separate
+/// style. Changing a widget's theme preserves its layout cache.
 ///
 /// # Example
 ///
@@ -38,6 +38,12 @@ pub struct DiffTheme {
     /// Inline deletion emphasis, patched over the line style.
     pub delete_word: Style,
 
+    /// Literal search emphasis, patched after word styles and synthetic whitespace dimming.
+    pub search_match: Style,
+
+    /// Selected search occurrence, patched over line and word styles.
+    pub search_active: Style,
+
     /// File and hunk headers.
     pub header: Style,
 
@@ -64,6 +70,8 @@ impl DiffTheme {
             delete_word: Style::default()
                 .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
+            search_match: Style::default().add_modifier(Modifier::UNDERLINED),
+            search_active: Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
             header: Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -102,6 +110,8 @@ impl DiffTheme {
             delete_word: Style::default()
                 .bg(Color::Rgb(0x4b, 0x25, 0x30))
                 .add_modifier(Modifier::BOLD),
+            search_match: Style::default().add_modifier(Modifier::UNDERLINED),
+            search_active: Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
             header: Style::default()
                 .fg(Color::Rgb(0x52, 0xc4, 0xc0))
                 .bg(Color::Rgb(0x0f, 0x14, 0x1f))
@@ -130,6 +140,8 @@ impl DiffTheme {
             delete: Style::default(),
             insert_word: Style::default().add_modifier(Modifier::UNDERLINED),
             delete_word: Style::default().add_modifier(Modifier::UNDERLINED),
+            search_match: Style::default().add_modifier(Modifier::UNDERLINED),
+            search_active: Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
             header: Style::default().add_modifier(Modifier::BOLD),
             gutter: Style::default(),
         }

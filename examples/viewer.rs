@@ -161,6 +161,8 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
     let mut pointer = None;
     let mut copy_preview = None;
     let mut body_area = Rect::default();
+    let mut query = String::new();
+    let mut editing_search = false;
     loop {
         terminal.draw(|frame| {
             // Outer spacing belongs to the host; the diff fills its supplied rectangle.
@@ -189,6 +191,18 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                     " · whitespace off"
                 });
             }
+            if editing_search || !state.search_query().is_empty() {
+                let current = state.active_match().map_or(0, |n| n + 1);
+                title = format!(
+                    "/{query} · {current}/{} · {mode:?} · {name}{}",
+                    state.search_matches().len(),
+                    if editing_search {
+                        " · Enter to find"
+                    } else {
+                        ""
+                    }
+                );
+            }
             frame.render_widget(Paragraph::new(title), title_area);
             body_area = body;
             let widget = Diff::new(&document)
@@ -200,7 +214,10 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                 .theme(theme);
             frame.render_stateful_widget(&widget, body, &mut state);
             if let Some(ref text) = copy_preview {
-                frame.render_widget(Paragraph::new(format!("Copy preview: {text:?}")), feedback_area);
+                frame.render_widget(
+                    Paragraph::new(format!("Copy preview: {text:?}")),
+                    feedback_area,
+                );
             } else if let Some((x, y)) = pointer {
                 let feedback = match state.hit_test(x, y) {
                     Some(HitTest::Source { old, new }) => {
@@ -219,9 +236,9 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                 frame.render_widget(Paragraph::new(feedback), feedback_area);
             }
             let help = if area.width >= 70 {
-                "s split · w wrap · t spaces · n numbers · i words · m mono · v select · c preview · q quit"
+                "/ search · f/F match · v select · c copy · s split · w wrap · q quit"
             } else {
-                "s split · w wrap · m mono · v select · c preview · q quit"
+                "/ search · f/F match · v select · c copy"
             };
             frame.render_widget(Paragraph::new(Line::raw(help)), help_area);
         })?;
@@ -235,13 +252,35 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
             copy_preview = None;
         }
         if let Event::Key(key) = event {
+            if editing_search {
+                match key.code {
+                    KeyCode::Enter => {
+                        editing_search = false;
+                        state.next_match();
+                    }
+                    KeyCode::Esc => {
+                        editing_search = false;
+                        query.clear();
+                        state.clear_search();
+                    }
+                    KeyCode::Backspace => {
+                        query.pop();
+                        state.set_search(&document, &query, None);
+                    }
+                    KeyCode::Char(c) => {
+                        query.push(c);
+                        state.set_search(&document, &query, None);
+                    }
+                    _ => {}
+                }
+                continue;
+            }
             match key.code {
                 KeyCode::Char('q') => break,
                 KeyCode::Esc if state.selection().is_some() => {
                     state.clear_selection();
                     copy_preview = None;
                 }
-                KeyCode::Esc => break,
                 KeyCode::Char('v') => {
                     let hit = pointer.and_then(|(x, y)| state.hit_test(x, y));
                     let caret = if let Some(HitTest::Source { old, new }) = hit {
@@ -287,6 +326,22 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                     state.extend_selection(&document, SelectionMotion::PreviousLine);
                     copy_preview = None;
                 }
+                KeyCode::Char('/') => {
+                    editing_search = true;
+                    query.clear();
+                    state.clear_search();
+                }
+                KeyCode::Char('f') => {
+                    state.next_match();
+                }
+                KeyCode::Char('F') => {
+                    state.previous_match();
+                }
+                KeyCode::Esc if !query.is_empty() => {
+                    query.clear();
+                    state.clear_search();
+                }
+                KeyCode::Esc => break,
                 KeyCode::Down | KeyCode::Char('j') => state.scroll_lines(1),
                 KeyCode::Up | KeyCode::Char('k') => state.scroll_lines(-1),
                 KeyCode::Left => state.scroll_horizontal(-4),

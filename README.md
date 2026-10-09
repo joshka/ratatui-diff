@@ -131,6 +131,33 @@ gutters, wrapping, padding, and display notation. Invalid grapheme boundaries an
 context are rejected. [`Diff::selection_style`](https://docs.rs/ratatui-diff/latest/ratatui_diff/widget/struct.Diff.html#method.selection_style) controls the overlay applied after word
 highlights.
 
+## Search available source
+
+Update a case-sensitive literal query in your event handler, then navigate cached occurrences.
+Both-side search counts shared context once. Restrict search with `Some(Side::Old)` or
+`Some(Side::New)`; an empty query clears it. Matches follow document order and navigation wraps.
+Omitted patch context, file headers, and metadata are not searched.
+
+```rust
+use ratatui_diff::{DiffDocument, DiffState};
+
+let document = DiffDocument::from_text("timeout: 500\n", "timeout: 1500\n");
+let mut state = DiffState::new();
+state.set_search(&document, "timeout", None);
+assert_eq!(state.search_matches().len(), 2);
+assert!(state.next_match());
+assert_eq!(state.active_match(), Some(0));
+// Render the widget to reveal the selected occurrence.
+assert!(state.previous_match());
+assert_eq!(state.active_match(), Some(1));
+```
+
+Matches retain source byte ranges through wrapping, resizing, and mode changes. Search styles
+compose over changed-word styles; the selected occurrence uses reverse video in every preset,
+including monochrome. Query updates scan available source synchronously; frame rendering reuses
+the results. Updating a query or side clears the active match, while identical updates preserve
+it. Rendering a replacement document clears search; the host can then reapply its query.
+
 ## Large documents
 
 Comparison is synchronous; prepare large documents outside the event loop. Rendering reuses the

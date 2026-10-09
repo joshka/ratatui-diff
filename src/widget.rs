@@ -12,6 +12,7 @@ use ratatui_core::widgets::StatefulWidget;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use crate::search::Search;
 use crate::{DiffDocument, DiffLine, DiffTheme, LineKind, Side};
 
 /// Diff presentation mode.
@@ -47,13 +48,15 @@ pub struct SourcePosition {
 /// A half-open UTF-8 byte range within a source line, excluding its line ending.
 ///
 /// Retain only with the document that produced it. Rendering never reconstructs omitted context.
+/// Hit-testing returns whole graphemes; literal search may match part of a grapheme, and rendering
+/// emphasizes every intersecting grapheme.
 /// Public field construction is unchecked; hit-testing returns valid grapheme ranges.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceRange {
     /// File, side, and one-based line identity.
     pub position: SourcePosition,
 
-    /// Complete source grapheme bytes; expanded tabs and escapes share this range.
+    /// Source bytes; expanded tabs and escapes share their original grapheme range.
     pub bytes: Range<usize>,
 }
 
@@ -234,6 +237,7 @@ pub struct DiffState {
     digits: usize,
     max_width: usize,
     content_width: usize,
+    search: Search,
 }
 
 impl DiffState {
@@ -298,6 +302,138 @@ impl DiffState {
     /// Construct an empty viewport with no prepared layout. Equivalent to `Default::default()`.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Update case-sensitive literal search over available source lines, outside rendering.
+    ///
+    /// `None` searches both sides, counting shared context once; `Some` restricts the side.
+    /// Results follow file, hunk, supplied line, then byte order. Occurrences do not overlap or
+    /// span lines. Headers, metadata, omitted patch context, and synthetic cues are not searched.
+    /// Empty queries clear results. A changed query, side, or document clears the active match;
+    /// identical updates reuse results. Select a result with [`next_match`](Self::next_match).
+    /// Rendering a different document clears the search rather than scanning during a frame.
+    pub fn set_search(&mut self, document: &DiffDocument, query: &str, side: Option<Side>) {
+        self.search.update(document, query, side);
+    }
+
+    /// Current literal query. Empty after document replacement or
+    /// [`clear_search`](Self::clear_search).
+    pub fn search_query(&self) -> &str {
+        &self.search.query
+    }
+
+    /// Cached source occurrences in document order, independent of width and presentation mode.
+    ///
+    /// In a both-side search, shared context uses the new side's identity and paints both panes.
+    pub fn search_matches(&self) -> &[SourceRange] {
+        &self.search.matches
+    }
+
+    /// Selected occurrence's zero-based index, or `None` before navigation or when empty.
+    pub fn active_match(&self) -> Option<usize> {
+        self.search.active
+    }
+
+    /// Clear the query, cached results, and active match without changing the viewport.
+    pub fn clear_search(&mut self) {
+        self.search = Search::default();
+    }
+
+    /// Select the next occurrence, wrapping from the last to the first.
+    ///
+    /// With no active match, selects the first. Returns `false` when empty. The next render reveals
+    /// the match's first intersecting grapheme, including wrapped or horizontally off-screen text.
+    /// Resizing and mode changes retain the source occurrence and reveal it in the new layout.
+    pub fn next_match(&mut self) -> bool {
+        self.navigate_match(true)
+    }
+
+    /// Select the previous occurrence, wrapping from the first to the last.
+    ///
+    /// With no active match, selects the last. Otherwise behaves like
+    /// [`next_match`](Self::next_match).
+    pub fn previous_match(&mut self) -> bool {
+        self.navigate_match(false)
+    }
+
+    fn navigate_match(&mut self, forward: bool) -> bool {
+        let count = self.search.matches.len();
+        if count == 0 {
+            return false;
+        }
+        self.search.active = Some(match (self.search.active, forward) {
+            (None, true) => 0,
+            (None, false) => count - 1,
+            (Some(n), true) => (n + 1) % count,
+            (Some(n), false) => (n + count - 1) % count,
+        });
+        self.search.reveal = true;
+        true
+    }
+
+    fn reveal_match(&mut self) {
+        if !self.search.reveal {
+            return;
+        }
+        self.search.reveal = false;
+        let Some(found) = self.search.active.map(|n| &self.search.matches[n]) else {
+            return;
+        };
+        let sources = match found.position.side {
+            Side::Old => &self.old_sources,
+            Side::New => &self.new_sources,
+        };
+        let Ok(n) = sources
+            .binary_search_by_key(&(found.position.file, found.position.line), |&(f, l, _)| {
+                (f, l)
+            })
+        else {
+            return;
+        };
+        let first = sources[n].2;
+        let row_index = self.screen[first].row;
+        let row = &self.rows[row_index];
+        let right =
+            self.key.is_some_and(|k| k.mode == ViewMode::Split) && found.position.side == Side::New;
+        let content = if right {
+            row.right.as_ref().unwrap_or(&row.left)
+        } else {
+            &row.left
+        };
+        let glyph = content.glyphs.partition_point(|g| {
+            g.bytes
+                .as_ref()
+                .is_some_and(|bytes| bytes.end <= found.bytes.start)
+        });
+        let Some(g) = content.glyphs.get(glyph) else {
+            return;
+        };
+        let wrapped = self.key.is_some_and(|k| k.wrap);
+        let target = if wrapped {
+            self.screen.partition_point(|s| {
+                s.row < row_index
+                    || (s.row == row_index
+                        && if right {
+                            s.right.end <= glyph
+                        } else {
+                            s.left.end <= glyph
+                        })
+            })
+        } else {
+            first
+        };
+        if target < self.offset || target >= self.offset.saturating_add(self.height) {
+            self.offset = target;
+        }
+        if !wrapped
+            && (g.column < self.horizontal
+                || g.column + g.width > self.horizontal + self.content_width)
+        {
+            self.horizontal = g
+                .column
+                .min(self.max_width.saturating_sub(self.content_width));
+        }
+        self.clamp();
     }
 
     /// Zero-based absolute index of the top displayed row in the last rendered layout.
@@ -730,11 +866,23 @@ impl<'a> Diff<'a> {
         {
             state.clear_selection();
         }
+        if state
+            .search
+            .document
+            .is_some_and(|id| id != self.document.id)
+        {
+            state.clear_search();
+        }
+        if state.height != usize::from(area.height) {
+            state.search.reveal |= state.search.active.is_some();
+        }
         state.height = usize::from(area.height);
         if state.key == Some(key) {
             state.clamp();
             return;
         }
+
+        state.search.reveal |= state.search.active.is_some();
 
         // Screen offsets change with wrapping or mode; a source location survives both.
         let same_document = state.key.is_some_and(|k| k.document == key.document);
@@ -966,6 +1114,7 @@ impl StatefulWidget for &Diff<'_> {
     /// Ratatui widgets, `area` must lie within the supplied buffer.
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut DiffState) {
         self.prepare(area, state);
+        state.reveal_match();
         state.rendered = Some((area, state.offset, state.horizontal));
         buf.set_style(area, self.theme.context);
         for y in area.y..area.bottom() {
@@ -1153,6 +1302,36 @@ impl Diff<'_> {
         // Skip off-screen glyphs by column, then draw only complete graphemes inside the pane.
         let first = content.glyphs[segment.clone()].partition_point(|g| g.column + g.width <= base)
             + segment.start;
+        let row = &state.rows[screen.row];
+        let source_side = if self.mode == ViewMode::Unified && content.new.is_some() {
+            Side::New
+        } else {
+            side
+        };
+        let source_line = match source_side {
+            Side::Old => content.old,
+            Side::New => content.new,
+        };
+        let candidates = source_line.map_or(&[][..], |line| {
+            state.search.indexes(SourcePosition {
+                file: row.file,
+                side: source_side,
+                line,
+            })
+        });
+        // Unified context can be found through either selected side.
+        let candidates = if candidates.is_empty()
+            && self.mode == ViewMode::Unified
+            && let Some(line) = content.old
+        {
+            state.search.indexes(SourcePosition {
+                file: row.file,
+                side: Side::Old,
+                line,
+            })
+        } else {
+            candidates
+        };
         for glyph in &content.glyphs[first..segment.end] {
             if glyph.column < base {
                 continue;
@@ -1176,6 +1355,26 @@ impl Diff<'_> {
             } else {
                 style
             };
+            let mut search_style = None;
+            if let Some(bytes) = &glyph.bytes {
+                let end = candidates.partition_point(|&(_, _, _, n)| {
+                    state.search.matches[n].bytes.end <= bytes.start
+                });
+                let hits = candidates[end..]
+                    .iter()
+                    .take_while(|&&(_, _, _, n)| state.search.matches[n].bytes.start < bytes.end);
+                for &(_, _, _, n) in hits {
+                    search_style = Some(if state.search.active == Some(n) {
+                        self.theme.search_active
+                    } else {
+                        self.theme.search_match
+                    });
+                    if state.search.active == Some(n) {
+                        break;
+                    }
+                }
+            }
+            let style = search_style.map_or(style, |highlight| style.patch(highlight));
             let style = if glyph.bytes.as_ref().is_some_and(|bytes| {
                 selected_line
                     .is_some_and(|(selection, position)| selection.intersects(position, bytes))

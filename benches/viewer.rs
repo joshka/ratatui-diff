@@ -89,6 +89,22 @@ fn benches(c: &mut Criterion) {
                         black_box(&state);
                     })
                 });
+                state.set_search(&document, "hello", None);
+                state.next_match();
+                (&widget).render(area, &mut buf, &mut state);
+                group.bench_function(
+                    BenchmarkId::new(format!("search-scroll-{label}"), count),
+                    |b| {
+                        b.iter(|| {
+                            state.scroll_lines(1);
+                            if state.offset() + 30 >= state.row_count() {
+                                state.start();
+                            }
+                            (&widget).render(area, &mut buf, &mut state);
+                            black_box(&buf);
+                        })
+                    },
+                );
             }
         }
     }

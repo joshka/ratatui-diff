@@ -100,3 +100,29 @@ available source lines; their cost is outside these measurements. Reproduce with
 cargo bench --bench viewer -- selection-scroll- \
   --warm-up-time 0.1 --measurement-time 0.2 --sample-size 10
 ```
+
+## Cached Literal Search Evidence
+
+Measured on October 9, 2026 on an Apple M2 Max, macOS, Rust 1.99, release optimization, and a
+100×30-cell buffer. The fixture inserts numbered Unicode lines containing `界 hello world` into an
+empty source; the literal query `hello` matches every line. Results are prepared before timing.
+Criterion uses 10 samples, 100 ms warm-up, and 200 ms measurement. Values are point estimates
+rounded to microseconds.
+
+| Mode               | Search, 1,000 lines | Search, 100,000 lines | No search, 100,000 lines |
+| ------------------ | ------------------- | --------------------- | ------------------------ |
+| Unified, unwrapped | 68 µs               | 74 µs                 | 70 µs                    |
+| Unified, wrapped   | 68 µs               | 74 µs                 | 70 µs                    |
+| Split, unwrapped   | 70 µs               | 76 µs                 | 73 µs                    |
+| Split, wrapped     | 72 µs               | 76 µs                 | 73 µs                    |
+
+A 100-fold source/result increase adds about 4–6 µs in these short steady-frame runs. Rendering uses
+binary source/range lookup and visible glyphs; it does not rescan source text for the query. These
+measurements exclude query updates, layout, terminal I/O, and navigation. They do not establish
+bounds for arbitrary queries, long lines, memory use, or terminal backends. Reproduce with the
+following command:
+
+```sh
+cargo bench --bench viewer --locked -- scroll \
+    --warm-up-time 0.1 --measurement-time 0.2 --sample-size 10
+```
