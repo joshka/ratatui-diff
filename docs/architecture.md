@@ -59,3 +59,14 @@ hit-testing glyph byte ranges and composes the selection overlay after word and 
 Extraction uses numbered source lines and rejects omitted context. The
 [selection contract](selection.md) defines ordering, source-line keyboard movement, line endings,
 and host pointer/copy integration.
+
+Literal search is updated explicitly through `DiffState::set_search`, outside rendering. Results
+retain source line identities and UTF-8 byte ranges, with a sorted source index for visible glyph
+lookup. Both-side search scans each supplied context line once and indexes both painted copies. It
+searches available hunk text only; omitted context cannot be reconstructed. Query/side updates clear
+the active occurrence; document replacement clears the query and results without scanning in a
+frame. Navigation reveals the first intersecting grapheme through the existing source and screen
+indexes. Mode/width changes retain results and reveal the selected occurrence in the new layout.
+Search styles patch over line/word styles after synthetic cue dimming; defaults add underline or
+reverse video without replacing source foregrounds or word backgrounds. Selection overlays search
+styles; advanced search remains deferred.

@@ -91,3 +91,24 @@ on an ink-colored surface. Pandoc token classes approximate the theme's TextMate
 widget itself has no syntax highlighting. Adjust the `--code-*` variables in
 `scripts/appearance.css` to tune the guide without changing diff colors. For a closer Aardvark
 match, try `--code-keyword: #e48383` and `--code-function: #d58bf0`.
+
+## Literal search interaction
+
+`examples/search-wide.tape` and `examples/search-wrapped.tape` use the client-settings fixture,
+Aardvark Ink, 22-pixel JetBrains Mono, and a 14-row terminal. The wide tape uses 101 columns; the
+wrapped split tape uses 49. They retain baseline and result images under distinct filenames. The
+intentional viewport change shows search revealing an initially off-screen `status` occurrence.
+Next/previous navigation, split/unified transitions, and wrapped fragments retain its source range.
+The wide tape also checks active-match emphasis in monochrome. These are host interaction captures,
+so they include query status and key bindings.
+
+```sh
+cargo build --example viewer --locked
+python3 scripts/capture.py examples/search-wide.tape
+python3 scripts/capture.py examples/search-wrapped.tape
+```
+
+Literal-search buffer tests cover UTF-8 ranges, grapheme intersections, tabs/control escapes,
+word-style composition, omitted context, long lines, wrapping, replacement, and cache retention.
+`search-scroll` benchmarks prepare results before timing steady viewport rendering at 1,000 and
+100,000 source lines. Query updates remain synchronous host work.

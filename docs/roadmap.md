@@ -2,8 +2,12 @@
 
 The rendering contract remains `StatefulWidget` with separate `DiffState`; the mutable-widget
 prototype is skipped. Establish visual and interaction evidence for the existing layouts before
-adding search, selection, or syntax coloring. See [architecture](architecture.md) for ownership and
-[appearance captures](appearance-captures.md) for visual checks.
+adding further interaction features or syntax coloring. See [architecture](architecture.md) for
+ownership and [appearance captures](appearance-captures.md) for visual checks.
+
+Literal search, source hit-testing, selection, mouse dragging, and source-text extraction are
+implemented. Clipboard access remains with the host. See the
+[coordinate](interaction-coordinates.md) and [selection](selection.md) contracts.
 
 These capabilities have no release commitment. Record implementation evidence and compatibility
 impact when selecting one; remove it from this list only when its documented contract is fulfilled.
@@ -12,8 +16,7 @@ impact when selecting one; remove it from this list only when its documented con
 | ---------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
 | Syntax coloring                                      | Adds language data, dependencies, and style composition        | A consumer needs language-aware coloring and accepts the footprint |
 | Structural comparison and engine adapters            | Needs richer semantics than text patches                       | A consumer supplies a concrete engine integration                  |
-| Search and match navigation                          | Adds query state and match/source mapping                      | Navigation alone no longer serves review workflows                 |
-| Selection, copying, mouse, hit-testing               | Needs stable source/display selection contracts                | A host requires interaction beyond viewport commands               |
+| Regex and advanced search                            | Adds query policy and dependency choices                       | A host needs more than case-sensitive literal source search        |
 | Context folding and expansion                        | Requires retained context and explicit missing-data boundaries | A host supplies full source or context retrieval                   |
 | Moved-line detection and improved alignment          | Adds heuristics and potentially expensive comparisons          | Measured examples show source-order pairing is inadequate          |
 | Combined, three-way, conflict views and editing      | Changes the two-sided data model                               | A concrete merge-review workflow establishes requirements          |
