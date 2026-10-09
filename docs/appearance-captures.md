@@ -43,11 +43,32 @@ framing, and base:
 - Terminal-owned dark colors and a genuinely light terminal, each with a tested host palette.
 - Tabs, trailing spaces, Unicode graphemes, and final-newline changes in focused fixtures.
 - Several files, long paths, separated hunks, and metadata-only changes.
-- Scrolled views and resized views anchored to the same source line.
+- Several viewport heights and runtime resizing anchored to the same source line.
 
 Each image should answer one question, name the option, and use a short original change a reader can
 understand. Avoid giant fixtures, decorative terminal chrome, tiny text, and galleries that change
 both the data and settings between comparisons.
+
+## Focused visual regression review
+
+Use the existing client-settings fixture for the even-width edge and narrow interaction checks:
+
+```sh
+cargo build --example viewer --locked
+python3 scripts/capture.py examples/aardvark-ink-even.tape
+python3 scripts/capture.py examples/appearance-interaction.tape
+```
+
+The even-width tape captures 100 columns, including the final padding cell on added rows. The
+interaction tape captures clipping, synchronized horizontal scrolling, wrapping with visible
+whitespace, scrolling to the end, mode changes, and a monochrome round trip in a short viewport.
+Resize/source-anchor and widget-boundary checks also run in the rendered-buffer tests; the tapes use
+fixed terminal geometry.
+
+Before editing presentation, copy baseline images to unique names in `media/`. Give each iteration
+its own screenshot paths so review links retain their original pixels. Inspect both the whole frame
+and changed cells. Keep neutral empty partners, readable gutters, complete graphemes, and non-color
+change cues. Stop when further adjustments only substitute equivalent colors or add visual noise.
 
 ## Remaining header work
 
@@ -61,7 +82,8 @@ old/new pane labels with narrow captures before extending the API.
 or 49 columns, a 22-pixel JetBrains Mono font, and 22 pixels of padding on every side. The pinned
 font settings yield 14-pixel columns and 22-pixel rows; changing them requires updating the pixel
 conversion in `scripts/capture-appearance.py`. Odd column counts fit two equal split panes and the
-one-column separator without leaving a spare cell at the right edge.
+one-column separator. At even widths, the spare rightmost cell uses the right row's background as
+padding; it does not add a source column.
 
 Code blocks use the syntax colors from
 [VS Code Dark 2026](https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/2026-dark.json)

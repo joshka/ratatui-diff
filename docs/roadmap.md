@@ -1,5 +1,10 @@
 # Deferred Work
 
+The rendering contract remains `StatefulWidget` with separate `DiffState`; the mutable-widget
+prototype is skipped. Establish visual and interaction evidence for the existing layouts before
+adding search, selection, or syntax coloring. See [architecture](architecture.md) for ownership and
+[appearance captures](appearance-captures.md) for visual checks.
+
 These capabilities have no release commitment. Record implementation evidence and compatibility
 impact when selecting one; remove it from this list only when its documented contract is fulfilled.
 
