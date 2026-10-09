@@ -2,14 +2,19 @@
 use std::error::Error;
 use std::time::Duration;
 
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEventKind,
+};
 use crossterm::execute;
 use ratatui::DefaultTerminal;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, StatefulWidget};
-use ratatui_diff::{Diff, DiffDocument, DiffState, DiffTheme, HitTest, ViewMode};
+use ratatui_diff::{
+    Diff, DiffDocument, DiffState, DiffTheme, HitTest, SelectionMotion, Side, SourceBoundary,
+    SourcePosition, SourceSelection, ViewMode,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
@@ -18,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let document = demo_document()?;
         let widget = capture_widget(&document, variant)?;
         let mut terminal = ratatui::init();
-        let result = capture(&mut terminal, &widget);
+        let result = capture(&mut terminal, &widget, &document, variant);
         ratatui::restore();
         return result;
     }
@@ -99,8 +104,8 @@ fn capture_widget<'a>(
         "lines-only" => split.word_highlights(false),
         "no-numbers" => split.line_numbers(false),
         "whitespace" => split.whitespace(true),
-        "wrapped" => split.whitespace(true).wrap(true),
-        "mono" => split
+        "selection-wrapped" | "wrapped" => split.whitespace(true).wrap(true),
+        "selection-mono" | "mono" => split
             .whitespace(true)
             .wrap(true)
             .theme(DiffTheme::monochrome()),
@@ -109,8 +114,31 @@ fn capture_widget<'a>(
 }
 
 /// Keep a stable widget-only frame available until the capture runner sends q.
-fn capture(terminal: &mut DefaultTerminal, widget: &Diff<'_>) -> Result<(), Box<dyn Error>> {
+fn capture(
+    terminal: &mut DefaultTerminal,
+    widget: &Diff<'_>,
+    document: &DiffDocument,
+    variant: &str,
+) -> Result<(), Box<dyn Error>> {
     let mut state = DiffState::new();
+    if variant.starts_with("selection-") {
+        let anchor = SourceBoundary {
+            position: SourcePosition {
+                file: 0,
+                side: Side::New,
+                line: 4,
+            },
+            byte: 8,
+        };
+        let focus = SourceBoundary {
+            position: SourcePosition {
+                line: 6,
+                ..anchor.position
+            },
+            byte: 22,
+        };
+        assert!(state.set_selection(document, SourceSelection { anchor, focus }));
+    }
     terminal.draw(|frame| frame.render_stateful_widget(widget, frame.area(), &mut state))?;
     loop {
         if let Event::Key(key) = event::read()?
@@ -131,6 +159,7 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
     let mut words = true;
     let mut theme = color_theme;
     let mut pointer = None;
+    let mut copy_preview = None;
     let mut body_area = Rect::default();
     loop {
         terminal.draw(|frame| {
@@ -170,7 +199,9 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                 .word_highlights(words)
                 .theme(theme);
             frame.render_stateful_widget(&widget, body, &mut state);
-            if let Some((x, y)) = pointer {
+            if let Some(ref text) = copy_preview {
+                frame.render_widget(Paragraph::new(format!("Copy preview: {text:?}")), feedback_area);
+            } else if let Some((x, y)) = pointer {
                 let feedback = match state.hit_test(x, y) {
                     Some(HitTest::Source { old, new }) => {
                         let range = new.or(old).expect("source hit has a side");
@@ -188,9 +219,9 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
                 frame.render_widget(Paragraph::new(feedback), feedback_area);
             }
             let help = if area.width >= 70 {
-                "s split · w wrap · t spaces · n numbers · i words · m mono · p point · q quit"
+                "s split · w wrap · t spaces · n numbers · i words · m mono · v select · c preview · q quit"
             } else {
-                "s split · w wrap · m mono · p point · q quit"
+                "s split · w wrap · m mono · v select · c preview · q quit"
             };
             frame.render_widget(Paragraph::new(Line::raw(help)), help_area);
         })?;
@@ -200,10 +231,62 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
         let event = event::read()?;
         if let Event::Mouse(mouse) = event {
             pointer = Some((mouse.column, mouse.row));
+            update_pointer_selection(&document, &mut state, mouse.column, mouse.row, mouse.kind);
+            copy_preview = None;
         }
         if let Event::Key(key) = event {
             match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Char('q') => break,
+                KeyCode::Esc if state.selection().is_some() => {
+                    state.clear_selection();
+                    copy_preview = None;
+                }
+                KeyCode::Esc => break,
+                KeyCode::Char('v') => {
+                    let hit = pointer.and_then(|(x, y)| state.hit_test(x, y));
+                    let caret = if let Some(HitTest::Source { old, new }) = hit {
+                        new.or(old).map(|range| range.start_boundary())
+                    } else {
+                        (state.offset()..state.row_count())
+                            .find_map(|row| state.source_at(row, Side::New))
+                            .map(|position| SourceBoundary { position, byte: 0 })
+                    };
+                    if let Some(caret) = caret {
+                        state.set_selection(
+                            &document,
+                            SourceSelection {
+                                anchor: caret,
+                                focus: caret,
+                            },
+                        );
+                    }
+                    copy_preview = None;
+                }
+                KeyCode::Char('c') => copy_preview = state.selected_text(&document),
+                KeyCode::Right if state.selection().is_some() => {
+                    state.extend_selection(&document, SelectionMotion::Next);
+                    copy_preview = None;
+                }
+                KeyCode::Left if state.selection().is_some() => {
+                    state.extend_selection(&document, SelectionMotion::Previous);
+                    copy_preview = None;
+                }
+                KeyCode::Home if state.selection().is_some() => {
+                    state.extend_selection(&document, SelectionMotion::LineStart);
+                    copy_preview = None;
+                }
+                KeyCode::End if state.selection().is_some() => {
+                    state.extend_selection(&document, SelectionMotion::LineEnd);
+                    copy_preview = None;
+                }
+                KeyCode::Down if state.selection().is_some() => {
+                    state.extend_selection(&document, SelectionMotion::NextLine);
+                    copy_preview = None;
+                }
+                KeyCode::Up if state.selection().is_some() => {
+                    state.extend_selection(&document, SelectionMotion::PreviousLine);
+                    copy_preview = None;
+                }
                 KeyCode::Down | KeyCode::Char('j') => state.scroll_lines(1),
                 KeyCode::Up | KeyCode::Char('k') => state.scroll_lines(-1),
                 KeyCode::Left => state.scroll_horizontal(-4),
@@ -243,4 +326,43 @@ fn run(terminal: &mut DefaultTerminal, color_theme: DiffTheme) -> Result<(), Box
         }
     }
     Ok(())
+}
+
+/// Host drag policy: start at the leading edge, extend to the hit grapheme's trailing edge.
+fn update_pointer_selection(
+    document: &DiffDocument,
+    state: &mut DiffState,
+    x: u16,
+    y: u16,
+    kind: MouseEventKind,
+) {
+    let Some(HitTest::Source { old, new }) = state.hit_test(x, y) else {
+        return;
+    };
+    match kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            if let Some(range) = new.or(old) {
+                state.set_selection(
+                    document,
+                    SourceSelection {
+                        anchor: range.start_boundary(),
+                        focus: range.end_boundary(),
+                    },
+                );
+            }
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            if let Some(mut selection) = state.selection() {
+                let range = match selection.anchor.position.side {
+                    Side::Old => old,
+                    Side::New => new,
+                };
+                if let Some(range) = range {
+                    selection.focus = range.end_boundary();
+                    state.set_selection(document, selection);
+                }
+            }
+        }
+        _ => {}
+    }
 }

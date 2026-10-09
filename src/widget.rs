@@ -217,6 +217,8 @@ struct LayoutKey {
 pub struct DiffState {
     // Last painted rectangle and offsets; navigation must redraw before cell lookup.
     rendered: Option<(Rect, usize, usize)>,
+    selection: Option<crate::SourceSelection>,
+    selection_document: Option<u64>,
     offset: usize,
     horizontal: usize,
     height: usize,
@@ -235,6 +237,64 @@ pub struct DiffState {
 }
 
 impl DiffState {
+    /// Inspect the current source selection. It survives layout changes, but not document
+    /// replacement.
+    pub fn selection(&self) -> Option<crate::SourceSelection> {
+        self.selection
+    }
+
+    /// Set anchor/focus from host keyboard or pointer input.
+    ///
+    /// Rejects invalid source boundaries, cross-file/side ranges, and omitted patch context.
+    /// The selection belongs to `document`; rendering another document clears it.
+    pub fn set_selection(
+        &mut self,
+        document: &DiffDocument,
+        selection: crate::SourceSelection,
+    ) -> bool {
+        if selection.text(document).is_none() {
+            return false;
+        }
+        self.selection = Some(selection);
+        self.selection_document = Some(document.id);
+        true
+    }
+
+    /// Remove the selection without changing navigation.
+    pub fn clear_selection(&mut self) {
+        self.selection = None;
+        self.selection_document = None;
+    }
+
+    /// Extend focus using source graphemes and line boundaries; anchor stays fixed.
+    ///
+    /// Returns false at a source boundary or missing patch context. Hosts bind their own keys.
+    pub fn extend_selection(
+        &mut self,
+        document: &DiffDocument,
+        motion: crate::SelectionMotion,
+    ) -> bool {
+        if self.selection_document != Some(document.id) {
+            return false;
+        }
+        let Some(mut selection) = self.selection else {
+            return false;
+        };
+        let Some(focus) = document.move_boundary(selection.focus, motion) else {
+            return false;
+        };
+        selection.focus = focus;
+        self.set_selection(document, selection)
+    }
+
+    /// Obtain exact selected text for host-controlled copying, without clipboard I/O.
+    pub fn selected_text(&self, document: &DiffDocument) -> Option<String> {
+        if self.selection_document != Some(document.id) {
+            return None;
+        }
+        self.selection?.text(document)
+    }
+
     /// Construct an empty viewport with no prepared layout. Equivalent to `Default::default()`.
     pub fn new() -> Self {
         Self::default()
@@ -549,6 +609,7 @@ impl DiffState {
 /// includes rendering and navigation examples.
 #[derive(Debug, Clone, Copy)]
 pub struct Diff<'a> {
+    selection_style: Style,
     document: &'a DiffDocument,
     mode: ViewMode,
     theme: DiffTheme,
@@ -568,6 +629,7 @@ impl<'a> Diff<'a> {
     pub fn new(document: &'a DiffDocument) -> Self {
         Self {
             document,
+            selection_style: Style::default().add_modifier(Modifier::REVERSED),
             mode: ViewMode::Unified,
             theme: DiffTheme::default(),
             words: true,
@@ -576,6 +638,15 @@ impl<'a> Diff<'a> {
             whitespace: false,
             tab: 4,
         }
+    }
+
+    /// Set the selection overlay, applied after line, word, and whitespace styles.
+    ///
+    /// Defaults to reverse video, which also works with monochrome themes. Does not affect layout.
+    /// Future search overlays should be composed before selection.
+    pub fn selection_style(mut self, style: Style) -> Self {
+        self.selection_style = style;
+        self
     }
 
     /// Select unified or split presentation. Defaults to [`ViewMode::Unified`].
@@ -653,6 +724,12 @@ impl<'a> Diff<'a> {
             whitespace: self.whitespace,
             tab: self.tab,
         };
+        if state
+            .selection_document
+            .is_some_and(|id| id != self.document.id)
+        {
+            state.clear_selection();
+        }
         state.height = usize::from(area.height);
         if state.key == Some(key) {
             state.clamp();
@@ -1055,6 +1132,24 @@ impl Diff<'_> {
         } else {
             state.horizontal
         };
+        let selected_line = state.selection.and_then(|selection| {
+            let selected_side = selection.anchor.position.side;
+            if self.mode == ViewMode::Split && selected_side != side {
+                return None;
+            }
+            let number = match selected_side {
+                Side::Old => content.old,
+                Side::New => content.new,
+            }?;
+            Some((
+                selection,
+                SourcePosition {
+                    file: state.rows[screen.row].file,
+                    side: selected_side,
+                    line: number,
+                },
+            ))
+        });
         // Skip off-screen glyphs by column, then draw only complete graphemes inside the pane.
         let first = content.glyphs[segment.clone()].partition_point(|g| g.column + g.width <= base)
             + segment.start;
@@ -1081,6 +1176,14 @@ impl Diff<'_> {
             } else {
                 style
             };
+            let style = if glyph.bytes.as_ref().is_some_and(|bytes| {
+                selected_line
+                    .is_some_and(|(selection, position)| selection.intersects(position, bytes))
+            }) {
+                style.patch(self.selection_style)
+            } else {
+                style
+            };
             buf.set_stringn(
                 x + (gutter + column) as u16,
                 y,
@@ -1088,6 +1191,10 @@ impl Diff<'_> {
                 glyph.width,
                 style,
             );
+            // Ratatui resets wide-grapheme continuation cells while writing the symbol.
+            for cell in 0..glyph.width {
+                buf[(x + (gutter + column + cell) as u16, y)].set_style(style);
+            }
         }
     }
 }

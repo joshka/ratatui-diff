@@ -77,3 +77,26 @@ alternates widths of 99 and 100 cells; cached glyphs and alignment are reused.
 Document preparation took 16.7 ms for 100,000 lines and 152 µs for 1,000 lines. Comparing 200
 completely different lines of 4,096 characters took 3.5 ms. These fixtures establish initial costs,
 not worst-case bounds. Allocation counts and peak memory have not been measured.
+
+## Selection Rendering Evidence
+
+Measured on October 9, 2026 with Rust 1.99.0 on the same Apple M2 Max and macOS 26.6.2, using
+release optimization, a 100×30-cell buffer, and the short Criterion settings above. Selection covers
+the new source from its first line through its final LF. These timings include steady scrolling and
+selection painting; they exclude selection validation, text extraction, preparation, and terminal
+I/O.
+
+| Mode               | 1,000 lines | 100,000 lines |
+| ------------------ | ----------- | ------------- |
+| Unified, unwrapped | 68 µs       | 72 µs         |
+| Unified, wrapped   | 67 µs       | 72 µs         |
+| Split, unwrapped   | 70 µs       | 75 µs         |
+| Split, wrapped     | 70 µs       | 74 µs         |
+
+Selection does not add a whole-document scan to steady rendering. Validation and extraction traverse
+available source lines; their cost is outside these measurements. Reproduce with
+
+```sh
+cargo bench --bench viewer -- selection-scroll- \
+  --warm-up-time 0.1 --measurement-time 0.2 --sample-size 10
+```
