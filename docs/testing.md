@@ -57,12 +57,13 @@ the fixed fixture and geometry, excluding capture padding and captions. Maintain
 when intentional layout changes move source cells; do not regenerate whole-screen baselines as an
 automatic response to failures.
 
-For parallel acceptance work, each owner finishes and freezes its files before handing off an
-explicit commit ID. Integrate frozen commits in a separate workspace; never update a workspace while
-its owner edits or captures evidence. Keep source-control mutations with one coordinator and run
-them sequentially. Ordinary jj status, diff, and log commands can snapshot the working copy; use
-`jj --ignore-working-copy` for history inspection during an active owner's work. Shared jj storage
-does not make separate workspace directories interchangeable.
+For parallel acceptance work, hand off an immutable revision snapshot with an explicit commit ID.
+Integrate that snapshot in a separate workspace while owners continue independent changes on stable
+parent revisions. Pause an owner only briefly when needed to capture a consistent snapshot; never
+update its workspace during active edits or captures. Keep source-control mutations with one
+coordinator and run them sequentially. Ordinary jj status, diff, and log commands can snapshot the
+working copy; use `jj --ignore-working-copy` for history inspection during an active owner's work.
+Shared jj storage does not make separate workspace directories interchangeable.
 
 ## Visual Evidence During Development and Review
 
