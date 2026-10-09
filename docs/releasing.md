@@ -10,9 +10,9 @@ workflow and environment. Enable private vulnerability reporting. These settings
 local configuration. No crates.io token is stored in this project.
 
 Bootstrap README media in a dedicated `media-v1` GitHub release, separate from crate publication.
-Run `just media`, review the captioned unified/split/whitespace PNGs and optional GIF, then upload
-the ignored outputs as release assets. Only after assets exist should README embed their fixed
-release URLs. Keep tapes and textual fixtures tracked.
+Run `just media`, review the captioned unified/split/whitespace PNG images and optional GIF, then
+upload the ignored outputs as release assets. Only after assets exist should README embed their
+fixed release URLs. Keep tapes and textual fixtures tracked.
 
 Subsequent releases generate media in the same workflow using release-plz outputs, checkout the
 released tag, and upload assets there. A failed capture leaves the published crate intact and
