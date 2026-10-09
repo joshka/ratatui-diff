@@ -10,7 +10,7 @@ documentation = "https://docs.rs/ratatui-diff"
 readme = "README.md"
 keywords = ["ratatui", "diff", "terminal", "widget", "tui"]
 categories = ["command-line-interface", "visualization"]
-include = ["src/**", "README.md", "CHANGELOG.md", "LICENSE-*", "examples/*.rs", "benches/*.rs", "tests/**"]
+include = ["src/**", "README.md", "CHANGELOG.md", "LICENSE-*", "examples/**/*.rs", "benches/*.rs", "tests/**"]
 
 [dependencies]
 ratatui-core = "0.1"
