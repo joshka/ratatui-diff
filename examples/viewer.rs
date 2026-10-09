@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut arguments: Vec<_> = arguments.iter().map(String::as_str).collect();
     if arguments.as_slice() == ["--help"] {
         println!(
-            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nFixtures: showcase (default), unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
+            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nFixtures: showcase (default), context, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
         );
         return Ok(());
     }
@@ -83,6 +83,17 @@ fn capture_widget<'a>(
     let widget = Diff::new(document).theme(DiffTheme::aardvark_ink());
     let split = widget.mode(ViewMode::Split);
     Ok(match variant {
+        "context-before" => widget,
+        "context-narrow-before" => split.wrap(true),
+        "context-split-before" => split,
+        "context-gap" => widget.context_lines(Some(3)),
+        "context-unified" => widget.context_lines(Some(3)),
+        "context-split" => split.context_lines(Some(3)),
+        "context-mono" => split
+            .context_lines(Some(3))
+            .theme(DiffTheme::monochrome())
+            .wrap(true),
+        "context-wrapped" => split.context_lines(Some(3)).wrap(true),
         "unified" => widget,
         "split" => split,
         "lines-only" => split.word_highlights(false),
@@ -124,6 +135,10 @@ fn capture(
         assert!(state.set_selection(document, SourceSelection { anchor, focus }));
     }
     terminal.draw(|frame| frame.render_stateful_widget(widget, frame.area(), &mut state))?;
+    if variant == "context-gap" {
+        state.next_file();
+        terminal.draw(|frame| frame.render_stateful_widget(widget, frame.area(), &mut state))?;
+    }
     loop {
         if let Event::Key(key) = event::read()?
             && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
@@ -194,6 +209,7 @@ fn run(
             frame.render_widget(Paragraph::new(title), title_area);
             body_area = body;
             let widget = Diff::new(&document)
+                .context_lines(Some(3))
                 .mode(mode)
                 .wrap(wrap)
                 .whitespace(whitespace)
@@ -362,6 +378,23 @@ fn run(
                 KeyCode::End => state.end(),
                 KeyCode::Char(']') => state.next_hunk(),
                 KeyCode::Char('[') => state.previous_hunk(),
+                KeyCode::Char('e') => {
+                    let fold = (body_area.y..body_area.bottom()).find_map(|y| {
+                        if let Some(HitTest::Fold { fold }) = state.hit_test(body_area.x, y) {
+                            Some(fold)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(fold) = fold {
+                        state.set_context_expanded(&fold, true);
+                    }
+                }
+                KeyCode::Char('z') => {
+                    for fold in state.context_folds().to_vec() {
+                        state.set_context_expanded(&fold, false);
+                    }
+                }
                 KeyCode::Char('s') => {
                     mode = if mode == ViewMode::Unified {
                         ViewMode::Split
@@ -401,6 +434,12 @@ fn update_pointer_selection(
     y: u16,
     kind: MouseEventKind,
 ) {
+    if kind == MouseEventKind::Down(MouseButton::Left)
+        && let Some(HitTest::Fold { fold }) = state.hit_test(x, y)
+    {
+        state.set_context_expanded(&fold, true);
+        return;
+    }
     let Some(HitTest::Source { old, new }) = state.hit_test(x, y) else {
         return;
     };
@@ -453,9 +492,9 @@ fn interaction_hint(editing: bool, selecting: bool, searching: bool, width: u16)
             "f/F match · v select · / search · Esc clear search · q quit"
         }
     } else if width < 45 {
-        "/ search · v select · s split · q quit"
+        "e expand · z collapse · / search · q quit"
     } else {
-        "Arrows scroll · / search · v select · s split · w wrap · q quit"
+        "Arrows scroll · e expand · z collapse · / search · s split · w wrap · q quit"
     }
 }
 
