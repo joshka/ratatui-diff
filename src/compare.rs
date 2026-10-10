@@ -34,8 +34,9 @@ impl DiffDocument {
     /// counts discard omitted lines; the document cannot later recover them. Identical inputs
     /// still have no hunks, even with `usize::MAX`.
     ///
-    /// CRLF and final-newline differences participate in comparison. Replacement lines are paired
-    /// in source order for word highlights. Changed words separated only by whitespace share one
+    /// CRLF and final-newline differences participate in comparison. Replacement lines use bounded,
+    /// monotonic similarity pairing for word highlights and split presentation. Oversized runs
+    /// fall back to source order. Changed words separated only by whitespace share one
     /// highlight range; large pairs fall back to whole-line styling.
     /// Computation is synchronous; prepare large inputs outside the UI event loop.
     ///
@@ -104,9 +105,136 @@ impl DiffDocument {
         }
     }
 }
-/// Fill missing highlights for deletion/insertion pairs separated by context lines.
+#[derive(Clone, Copy)]
+enum AlignmentStep {
+    Pair,
+    SkipOld,
+    SkipNew,
+}
+
+/// Pair one context-free replacement run; indexes refer to the original hunk slice.
 ///
-/// Pair in source order, matching split layout. Limit each run to 256 lines and each pair to a
+/// Both refinement and split layout use this decision, including its bounded fallback.
+pub(crate) fn replacement_pairs(lines: &[DiffLine]) -> Vec<(Option<usize>, Option<usize>)> {
+    let deletes: Vec<_> = (0..lines.len())
+        .filter(|&i| lines[i].kind == LineKind::Delete)
+        .collect();
+    let inserts: Vec<_> = (0..lines.len())
+        .filter(|&i| lines[i].kind == LineKind::Insert)
+        .collect();
+    let source_order = || {
+        (0..deletes.len().max(inserts.len()))
+            .map(|i| (deletes.get(i).copied(), inserts.get(i).copied()))
+            .collect()
+    };
+
+    // Bound preparation before tokenizing. The pair-work estimate also bounds all sorted
+    // multiset intersections, independently of how similar the candidate lines are.
+    if deletes.is_empty() || inserts.is_empty() {
+        return source_order();
+    }
+    let bytes: usize = lines.iter().map(|line| line.text.len()).sum();
+    let work = deletes
+        .len()
+        .saturating_mul(inserts.len())
+        .saturating_mul(bytes);
+    if lines.len() > 256 || bytes > 32768 || work > 1_048_576 {
+        return source_order();
+    }
+    let grams: Vec<_> = lines.iter().map(|line| bigrams(&line.text)).collect();
+    let width = inserts.len() + 1;
+    let mut scores = vec![0u32; (deletes.len() + 1) * width];
+    let mut choices = vec![AlignmentStep::SkipOld; scores.len()];
+    // Solve suffixes so traceback starts at the earliest source lines. Equal-score decisions
+    // prefer a pair, then an old-side gap: repeated lines therefore have stable early partners.
+    for a in (0..deletes.len()).rev() {
+        for b in (0..inserts.len()).rev() {
+            let index = a * width + b;
+            let down = scores[index + width];
+            let right = scores[index + 1];
+            let reward = similarity(&grams[deletes[a]], &grams[inserts[b]]).saturating_sub(500);
+            let paired = scores[index + width + 1] + u32::from(reward);
+            if reward > 0 && paired >= down.max(right) {
+                scores[index] = paired;
+                choices[index] = AlignmentStep::Pair;
+            } else if down >= right {
+                scores[index] = down;
+                choices[index] = AlignmentStep::SkipOld;
+            } else {
+                scores[index] = right;
+                choices[index] = AlignmentStep::SkipNew;
+            }
+        }
+    }
+
+    let mut pairs = Vec::new();
+    let (mut a, mut b) = (0, 0);
+    let (mut old_start, mut new_start) = (0, 0);
+    while a < deletes.len() && b < inserts.len() {
+        match choices[a * width + b] {
+            AlignmentStep::Pair => {
+                append_source_order(&mut pairs, &deletes[old_start..a], &inserts[new_start..b]);
+                pairs.push((Some(deletes[a]), Some(inserts[b])));
+                a += 1;
+                b += 1;
+                old_start = a;
+                new_start = b;
+            }
+            AlignmentStep::SkipOld => a += 1,
+            AlignmentStep::SkipNew => b += 1,
+        }
+    }
+    // Similarity supplies anchors, not evidence that remaining lines are unrelated. Preserve
+    // familiar source-order replacements inside each gap (including completely dissimilar runs).
+    append_source_order(&mut pairs, &deletes[old_start..], &inserts[new_start..]);
+    pairs
+}
+
+fn append_source_order(
+    pairs: &mut Vec<(Option<usize>, Option<usize>)>,
+    deletes: &[usize],
+    inserts: &[usize],
+) {
+    for i in 0..deletes.len().max(inserts.len()) {
+        pairs.push((deletes.get(i).copied(), inserts.get(i).copied()));
+    }
+}
+
+fn bigrams(text: &str) -> Vec<(char, char)> {
+    let mut previous = '\0';
+    let mut grams = Vec::new();
+    for ch in text.trim().chars() {
+        grams.push((previous, ch));
+        previous = ch;
+    }
+    grams.sort_unstable();
+    grams
+}
+
+// Dice overlap retains Unicode scalar values and duplicate counts. Sorted bigrams avoid
+// randomized hashes and expensive per-candidate edit-distance calculations.
+fn similarity(left: &[(char, char)], right: &[(char, char)]) -> u16 {
+    if left.is_empty() && right.is_empty() {
+        return 1000;
+    }
+    let (mut a, mut b, mut common) = (0, 0, 0);
+    while a < left.len() && b < right.len() {
+        match left[a].cmp(&right[b]) {
+            std::cmp::Ordering::Less => a += 1,
+            std::cmp::Ordering::Greater => b += 1,
+            std::cmp::Ordering::Equal => {
+                common += 1;
+                a += 1;
+                b += 1;
+            }
+        }
+    }
+    (2000 * common / (left.len() + right.len())) as u16
+}
+
+/// Fill missing highlights within context-free replacement runs.
+///
+/// Use the same replacement pairing as split layout. Limit each run to 256 lines and each pair to a
 /// combined 8 KiB / 2,048 whitespace-delimited words. Unmatched or over-limit lines retain their
 /// existing highlights; `None` renders with whole-line styling. Explicit ranges, including empty
 /// lists, remain authoritative. These limits bound refinement, not whole-document comparison.
@@ -121,14 +249,12 @@ pub(crate) fn refine(lines: &mut [DiffLine]) {
             .iter()
             .position(|l| l.kind == LineKind::Context)
             .map_or(lines.len(), |n| start + n);
-        let deletes: Vec<_> = (start..end)
-            .filter(|&n| lines[n].kind == LineKind::Delete)
-            .collect();
-        let inserts: Vec<_> = (start..end)
-            .filter(|&n| lines[n].kind == LineKind::Insert)
-            .collect();
         if end - start <= 256 {
-            for (&a, &b) in deletes.iter().zip(&inserts) {
+            for (a, b) in replacement_pairs(&lines[start..end]) {
+                let (Some(a), Some(b)) = (a, b) else {
+                    continue;
+                };
+                let (a, b) = (start + a, start + b);
                 let old = &lines[a].text;
                 let new = &lines[b].text;
                 if old.len() + new.len() > 8192

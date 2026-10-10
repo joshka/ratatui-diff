@@ -6,6 +6,7 @@ use ratatui_diff::{DiffDocument, DiffFile};
 pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
     match name {
         "showcase" => showcase(),
+        "alignment" => alignment(),
         "context" => context(),
         "files" => files(),
         "unicode" => unicode(),
@@ -13,10 +14,21 @@ pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
         "whitespace" => whitespace(),
         "multi-file" => multi_file(),
         _ => Err(format!(
-            "unknown fixture: {name}; choose showcase, unicode, unicode-text, whitespace, or multi-file"
+            "unknown fixture: {name}; choose showcase, context, files, alignment, unicode, unicode-text, whitespace, or multi-file"
         )
         .into()),
     }
+}
+
+fn alignment() -> Result<DiffDocument, Box<dyn Error>> {
+    let old = "timeout_ms: 1000\nretries: 2\nendpoint: /api/v1\nlabel: café 界\n";
+    let new = "# Audit requests before sending\ntimeout_ms: 2500\nretries: 4\nendpoint: /api/v2\nlabel: café 世界\n";
+    Ok(DiffDocument::new(vec![compared_file(
+        "config/review.yml",
+        old,
+        new,
+        3,
+    )])?)
 }
 
 fn files() -> Result<DiffDocument, Box<dyn Error>> {

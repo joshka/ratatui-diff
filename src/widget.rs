@@ -25,8 +25,9 @@ pub enum ViewMode {
 
     /// Original source on the left and modified source on the right.
     ///
-    /// Replacement lines pair in source order; unmatched lines leave a blank opposite pane.
-    /// Wrapped pairs use the taller side's height, and horizontal scrolling moves both panes.
+    /// Replacement lines use bounded similarity pairing; unmatched lines leave a blank opposite
+    /// pane. Unanchored gaps and oversized runs pair in source order. Wrapped pairs use the taller
+    /// side's height, and horizontal scrolling moves both panes.
     Split,
 }
 
@@ -1419,7 +1420,7 @@ impl<'a> Diff<'a> {
 
     /// Prepare width-independent source alignment and display glyphs.
     ///
-    /// Each replacement run pairs deletions and insertions in source order, matching refinement.
+    /// Each replacement run uses the same bounded similarity pairing as highlight refinement.
     /// Its shorter side receives empty content. Gutter digits use the largest source number in
     /// the whole document so scrolling does not change column alignment.
     fn build_logical_rows(self, state: &mut DiffState) {
@@ -1533,21 +1534,13 @@ impl<'a> Diff<'a> {
                             .iter()
                             .position(|l| l.kind == LineKind::Context)
                             .map_or(source.lines.len(), |x| n + x);
-                        let deletes: Vec<_> = source.lines[n..end]
-                            .iter()
-                            .filter(|l| l.kind == LineKind::Delete)
-                            .collect();
-                        let inserts: Vec<_> = source.lines[n..end]
-                            .iter()
-                            .filter(|l| l.kind == LineKind::Insert)
-                            .collect();
-                        for i in 0..deletes.len().max(inserts.len()) {
-                            let left = deletes
-                                .get(i)
-                                .map_or_else(empty, |l| content(l, self.whitespace, self.tab));
-                            let right = inserts
-                                .get(i)
-                                .map_or_else(empty, |l| content(l, self.whitespace, self.tab));
+                        for (old, new) in crate::compare::replacement_pairs(&source.lines[n..end]) {
+                            let left = old.map_or_else(empty, |i| {
+                                content(&source.lines[n + i], self.whitespace, self.tab)
+                            });
+                            let right = new.map_or_else(empty, |i| {
+                                content(&source.lines[n + i], self.whitespace, self.tab)
+                            });
                             state.rows.push(Row {
                                 file,
                                 hunk: Some(hunk),
