@@ -145,6 +145,11 @@ criterion_group!(viewer, benches, scenarios::benches);
 mod memory;
 
 fn main() {
+    #[cfg(feature = "syntax")]
+    if std::env::var_os("RATATUI_DIFF_SYNTAX_PROBE").is_some() {
+        syntax::probe();
+        return;
+    }
     if std::env::var_os("RATATUI_DIFF_MEMORY").is_some() {
         memory::run();
     } else {

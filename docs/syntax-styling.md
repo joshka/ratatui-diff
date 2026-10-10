@@ -92,3 +92,7 @@ before/after tapes cover unified, split, and narrow wrapped views, including com
 and emoji. Public integration tests verify source validation, independent side state, resource
 limits, attachment identity, composed contrast, geometry, and overlay preservation. The
 feature-gated Criterion group measures preparation separately from layout and scrolling.
+
+See [syntax preparation and footprint](syntax-performance.md) for measured cold asset loading,
+full/retained preparation, wrapped rendering, binary size, and resident memory with reproduction
+commands and measurement limits.
