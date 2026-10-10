@@ -241,7 +241,7 @@ pub enum HitTest {
 /// bytes during preparation, before transformations change the displayed text.
 #[derive(Debug)]
 struct Glyph {
-    text: String,
+    text: Range<usize>,
     // Synthetic final-newline notation has no source byte range.
     bytes: Option<Range<usize>>,
 
@@ -261,7 +261,10 @@ struct Glyph {
 /// number, so they cannot be returned by source lookup.
 #[derive(Debug)]
 struct Content {
-    glyphs: Vec<Glyph>,
+    // One buffer owns the source copy and appended transformations. Ordinary glyphs index
+    // its source prefix; source byte ranges remain independent of display transformations.
+    text: String,
+    glyphs: Box<[Glyph]>,
     kind: LineKind,
     old: Option<usize>,
     new: Option<usize>,
@@ -2186,7 +2189,7 @@ impl Diff<'_> {
             buf.set_stringn(
                 x + (gutter + column) as u16,
                 y,
-                &glyph.text,
+                &content.text[glyph.text.clone()],
                 glyph.width,
                 style,
             );
@@ -2213,7 +2216,8 @@ fn ghost_style(style: Style, divisor: u16) -> Style {
 // Padding content has no source identity, marker, or missing-newline annotation.
 fn empty() -> Content {
     Content {
-        glyphs: Vec::new(),
+        text: String::new(),
+        glyphs: Box::default(),
         kind: LineKind::Context,
         old: None,
         new: None,
@@ -2243,6 +2247,7 @@ fn header(file: usize, hunk: Option<usize>, text: &str, tab: usize) -> Row {
 /// standalone zero-width clusters receive a dotted-circle base. Source highlight byte ranges are
 /// mapped before expansion; wrapping and clipping then share the prepared geometry.
 fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
+    let mut text = line.text.clone();
     let mut glyphs = Vec::new();
     let mut column = 0;
     for (byte, g) in line.text.grapheme_indices(true) {
@@ -2255,11 +2260,10 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
             let width = tab - column % tab;
             for n in 0..width {
                 glyphs.push(Glyph {
-                    text: if whitespace && n == 0 {
-                        "→".into()
-                    } else {
-                        " ".into()
-                    },
+                    text: append_glyph_text(
+                        &mut text,
+                        if whitespace && n == 0 { "→" } else { " " },
+                    ),
                     bytes: Some(byte..byte + g.len()),
                     column,
                     width: 1,
@@ -2269,8 +2273,9 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
                 column += 1;
             }
         } else {
-            let text = if g.chars().any(char::is_control) {
-                g.chars()
+            let mut display = if g.chars().any(char::is_control) {
+                let escaped = g
+                    .chars()
                     .map(|c| {
                         if c.is_control() {
                             format!("\\u{{{:x}}}", c as u32)
@@ -2278,22 +2283,23 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
                             c.to_string()
                         }
                     })
-                    .collect::<String>()
+                    .collect::<String>();
+                append_glyph_text(&mut text, &escaped)
             } else if whitespace && g == " " {
-                "·".into()
+                append_glyph_text(&mut text, "·")
             } else {
-                g.to_owned()
+                byte..byte + g.len()
             };
-            let width = UnicodeWidthStr::width(text.as_str());
-            // Standalone zero-width clusters get a dotted-circle base, avoiding attachment
-            // to a gutter or unrelated previous cell.
-            let (text, width) = if width == 0 {
-                (format!("◌{text}"), 1)
+            let width = text[display.clone()].width();
+            // A standalone zero-width cluster must not attach to the gutter or previous cell.
+            let width = if width == 0 {
+                display = append_glyph_text(&mut text, &format!("◌{g}"));
+                1
             } else {
-                (text, width)
+                width
             };
             glyphs.push(Glyph {
-                text,
+                text: display,
                 bytes: Some(byte..byte + g.len()),
                 column,
                 width,
@@ -2309,7 +2315,7 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
         for g in " ⏎".graphemes(true) {
             let width = g.width();
             glyphs.push(Glyph {
-                text: g.into(),
+                text: append_glyph_text(&mut text, g),
                 bytes: None,
                 column,
                 width,
@@ -2320,12 +2326,21 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
         }
     }
     Content {
-        glyphs,
+        text,
+        // Completed glyph geometry never grows. Discard preparation's geometric Vec slack.
+        glyphs: glyphs.into_boxed_slice(),
         kind: line.kind,
         old: line.old,
         new: line.new,
         width: column,
     }
+}
+
+// Appended display text cannot change the byte offsets of the immutable source prefix.
+fn append_glyph_text(text: &mut String, glyph: &str) -> Range<usize> {
+    let start = text.len();
+    text.push_str(glyph);
+    start..text.len()
 }
 
 /// Greedily pack whole glyphs into ranges of glyph indexes.
@@ -2350,4 +2365,64 @@ fn segments(content: &Content, width: usize, wrap: bool) -> Vec<Range<usize>> {
     }
     out.push(start..content.glyphs.len());
     out
+}
+
+#[cfg(test)]
+mod glyph_memory_tests {
+    use super::*;
+
+    #[test]
+    fn prepared_long_unicode_line_has_bounded_text_storage() {
+        let source = "界e\u{301}👩‍💻 hello".repeat(10_000);
+        let mut line = DiffLine::new(LineKind::Insert, None, Some(1), &source);
+        line.terminated = true;
+        let prepared = content(&line, false, 4);
+        let displayed: String = prepared
+            .glyphs
+            .iter()
+            .map(|glyph| &prepared.text[glyph.text.clone()])
+            .collect();
+        assert_eq!(displayed, source);
+        assert!(prepared.text.capacity() <= source.len() * 2);
+        assert_eq!(prepared.width, source.width());
+    }
+
+    #[test]
+    fn transformed_glyphs_preserve_source_ranges_and_units() {
+        let source = "\u{301}\t界e\u{301}👩‍💻 \u{1}";
+        let mut line = DiffLine::new(LineKind::Insert, None, Some(1), source);
+        line.terminated = false;
+        let prepared = content(&line, true, 4);
+        let displayed: String = prepared
+            .glyphs
+            .iter()
+            .map(|glyph| &prepared.text[glyph.text.clone()])
+            .collect();
+        assert_eq!(displayed, "◌\u{301}→  界e\u{301}👩‍💻·\\u{1} ⏎");
+        let tab: Vec<_> = prepared
+            .glyphs
+            .iter()
+            .filter(|g| g.bytes == Some(2..3))
+            .collect();
+        assert_eq!(tab.len(), 3);
+        assert!(tab.iter().all(|g| g.width == 1));
+        let emoji = prepared
+            .glyphs
+            .iter()
+            .find(|g| g.bytes == Some(9..20))
+            .unwrap();
+        assert_eq!(emoji.width, 2);
+        assert_eq!(&prepared.text[emoji.text.clone()], "👩‍💻");
+        let control = prepared
+            .glyphs
+            .iter()
+            .find(|g| g.bytes == Some(21..22))
+            .unwrap();
+        assert_eq!(control.width, 5);
+        assert_eq!(&prepared.text[control.text.clone()], "\\u{1}");
+        assert_eq!(
+            prepared.glyphs.iter().filter(|g| g.bytes.is_none()).count(),
+            2
+        );
+    }
 }
