@@ -367,6 +367,8 @@ struct LayoutKey {
 pub struct DiffState {
     // Last painted rectangle and offsets; navigation must redraw before cell lookup.
     rendered: Option<(Rect, usize, usize)>,
+    // Repeated file-header screen row in the last paint; not part of the source-row index.
+    sticky_header: Option<usize>,
     selection: Option<crate::SourceSelection>,
     selection_document: Option<u64>,
     reveal_selection: bool,
@@ -796,7 +798,8 @@ impl DiffState {
         self.clamp();
     }
 
-    /// Zero-based absolute index of the top displayed row in the last rendered layout.
+    /// Zero-based absolute index of the top scrolling row in the last rendered layout.
+    /// A repeated sticky file header is painted above this row without changing its index.
     pub fn offset(&self) -> usize {
         self.offset
     }
@@ -856,7 +859,13 @@ impl DiffState {
         {
             return None;
         }
-        let Some(screen) = self.screen.get(offset + usize::from(y - area.y)) else {
+        let relative = usize::from(y - area.y);
+        let displayed = match (self.sticky_header, relative) {
+            (Some(header), 0) => header,
+            (Some(_), _) => offset + relative - 1,
+            (None, _) => offset + relative,
+        };
+        let Some(screen) = self.screen.get(displayed) else {
             return Some(HitTest::Padding);
         };
         let row = &self.rows[screen.row];
@@ -1039,9 +1048,11 @@ impl DiffState {
 
     /// Map a zero-based absolute displayed row to a source line in the last rendered layout.
     ///
-    /// Add [`offset`](Self::offset) to a viewport-relative row before calling. Returns `None` for
-    /// out-of-range rows, headers, or a side without a source line. Wrapped continuations map to
-    /// the same logical line, including blank padding beside a taller split partner.
+    /// Without sticky headers, add [`offset`](Self::offset) to a viewport-relative row.
+    /// With sticky headers, use [`hit_test`](Self::hit_test) for painted terminal cells. Returns
+    /// `None` for out-of-range rows, headers, or a side without a source line. Wrapped
+    /// continuations map to the same logical line, including blank padding beside a taller
+    /// split partner.
     pub fn source_at(&self, displayed_row: usize, side: Side) -> Option<SourcePosition> {
         let row = self.rows.get(self.screen.get(displayed_row)?.row)?;
         if row.header {
@@ -1167,6 +1178,7 @@ pub struct Diff<'a> {
     tab: usize,
     context: Option<usize>,
     show_stats: bool,
+    sticky_file_headers: bool,
 }
 
 impl<'a> Diff<'a> {
@@ -1190,6 +1202,7 @@ impl<'a> Diff<'a> {
             tab: 4,
             context: None,
             show_stats: false,
+            sticky_file_headers: false,
         }
     }
 
@@ -1258,6 +1271,31 @@ impl<'a> Diff<'a> {
     /// ```
     pub fn show_stats(mut self, visible: bool) -> Self {
         self.show_stats = visible;
+        self
+    }
+
+    /// Keep the current file's path and change counts above scrolled content. Off by default.
+    ///
+    /// With at least two rows below optional document statistics, reserves one row for the file
+    /// header. The natural header occupies that row when it is already at the scroll offset;
+    /// otherwise a copy stays above the content. It switches when the offset reaches the next
+    /// file. Counts and styles are the same as the ordinary header, and clicking it yields
+    /// [`HitTest::FileHeader`] so hosts can use their existing folding controls.
+    ///
+    /// One-row viewports use ordinary scrolling. Page movement uses the remaining content height.
+    /// The repeated header adds no row to [`DiffState::row_count`] and does not change absolute
+    /// source indexes; use [`DiffState::hit_test`] for terminal coordinates. Narrow headers use
+    /// the existing path ellipsis and count clipping rules. This option does not rebuild layout.
+    ///
+    /// ```
+    /// use ratatui_diff::{Diff, DiffDocument};
+    /// let document = DiffDocument::from_text("old\n", "new\n");
+    /// let widget = Diff::new(&document)
+    ///     .sticky_file_headers(true)
+    ///     .show_stats(true);
+    /// ```
+    pub fn sticky_file_headers(mut self, enabled: bool) -> Self {
+        self.sticky_file_headers = enabled;
         self
     }
 
@@ -1849,7 +1887,14 @@ impl StatefulWidget for &Diff<'_> {
         } else {
             area
         };
-        self.prepare(area, state);
+        // Reserve the header's capacity before clamping or resolving reveals. Using a stable
+        // content height avoids changing page sizes as natural headers enter the viewport.
+        let sticky = self.sticky_file_headers && area.height >= 2;
+        let layout_area = Rect {
+            height: area.height - u16::from(sticky),
+            ..area
+        };
+        self.prepare(layout_area, state);
         let reveal = if state.reveal_selection {
             state.selection.map(|selection| selection.focus.position)
         } else if state.search.reveal {
@@ -1863,7 +1908,7 @@ impl StatefulWidget for &Diff<'_> {
         if let Some(position) = reveal
             && state.expand_source(position)
         {
-            self.prepare(area, state);
+            self.prepare(layout_area, state);
             if !state.reveal_selection {
                 state.search.reveal = true;
             }
@@ -1876,6 +1921,14 @@ impl StatefulWidget for &Diff<'_> {
         } else {
             state.reveal_match();
         }
+        state.sticky_header = if sticky {
+            state.screen.get(state.offset).and_then(|screen| {
+                let row = &state.rows[screen.row];
+                (!row.file_header).then(|| state.files[row.file])
+            })
+        } else {
+            None
+        };
         state.rendered = Some((area, state.offset, state.horizontal));
         buf.set_style(full_area, self.theme.context);
         for y in full_area.y..full_area.bottom() {
@@ -1901,10 +1954,11 @@ impl StatefulWidget for &Diff<'_> {
                 0,
             );
         }
-        for (y, screen) in state
-            .screen
-            .iter()
-            .skip(state.offset)
+        let pinned = state.sticky_header.map(|header| &state.screen[header]);
+        let content = state.screen.iter().skip(state.offset);
+        for (y, screen) in pinned
+            .into_iter()
+            .chain(content)
             .take(usize::from(area.height))
             .enumerate()
         {

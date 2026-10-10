@@ -77,11 +77,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          lfs: true
       - run: rustup toolchain install stable --profile minimal
       - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: just@1.58.0,cargo-rdme@2.2.3
       - run: rustup toolchain install nightly nightly-2026-08-05 --profile minimal
+      - run: python3 scripts/check-sticky-media.py
       - run: just docs docs-rs readme-check
       - run: cargo package --locked
   policy:
@@ -147,6 +149,19 @@ jobs:
           echo "BETAMAX=$RUNNER_TEMP/betamax/betamax" >> "$GITHUB_ENV"
       - run: cargo build --example viewer --locked
       - run: python3 scripts/terminal-ux.py
+      - name: Resolve the viewer for the sticky-header acceptance tape
+        run: echo "RATATUI_DIFF_VIEWER=$GITHUB_WORKSPACE/target/debug/examples/viewer" >> "$GITHUB_ENV"
+      - name: Sticky-header acceptance and review gallery
+        uses: joshka/betamax-action@4f9e3b05a390d0bb16e72af92e3995541a532c79
+        env:
+          BETAMAX_FAILURE_DIR: media/terminal-ux/sticky/failures
+        with:
+          version: 0.1.22
+          sha256: 497c0bbf6da724e90be49e48ade317d99567e4b03e4e86f03c0dac691ec6358f
+          tapes: examples/terminal-ux-sticky.tape
+          formats: png
+          extra-outputs: media/terminal-ux/sticky/*.png
+          comment-key: sticky-headers
       - run: cargo build --example viewer --features syntax --locked
       - run: python3 scripts/capture.py examples/syntax-interaction.tape
       - name: Retain terminal checkpoints and failure diagnostics

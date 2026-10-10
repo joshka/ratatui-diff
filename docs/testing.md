@@ -15,8 +15,9 @@ platform tests and beta Clippy; report pending hosted checks separately from loc
 inputs, Unicode, long lines, and dissimilar sources. Record machine, compiler, fixture, and timings;
 compare steady viewport work across document sizes. Shared CI does not gate absolute timings.
 
-Betamax tapes exercise the example with output waits and fixed terminal geometry. Generated images
-are ignored and belong in release assets, never repository history.
+Betamax tapes exercise the example with output waits and fixed terminal geometry. Generated captures
+are ignored and belong in release assets. Curated documentation images may be committed through Git
+LFS; documentation builds must verify hydrated bytes.
 
 ## Terminal Consumer Acceptance
 
@@ -116,9 +117,11 @@ states, give the capture configuration, and keep the images close to the behavio
 Verify reviewer-accessible assets before publishing the PR. Asset publication requires authorization
 when it has not already been granted for the task; prepare and review captures first.
 
-Track tapes and original text fixtures, never generated media. Visual inspection complements buffer,
-style, navigation, and Unicode tests. Note unreviewed states and remaining defects honestly. Changes
-with no visible effect should say so when relevant, rather than manufacturing screenshots.
+Track tapes and original text fixtures. Store curated documentation media through Git LFS; keep raw
+capture sessions outside disposable workspaces and publish durable evidence archives. Visual
+inspection complements buffer, style, navigation, and Unicode tests. Note unreviewed states and
+remaining defects honestly. Changes with no visible effect should say so when relevant, rather than
+manufacturing screenshots.
 
 ## Initial Scrolling Evidence
 
@@ -202,3 +205,12 @@ following command:
 cargo bench --bench viewer --locked -- scroll \
     --warm-up-time 0.1 --measurement-time 0.2 --sample-size 10
 ```
+
+## Sticky-header worked example
+
+The [worked example](sticky-headers-walkthrough.md) records one scenario from baseline capture
+through terminal assertions, a real failure, visual inspection, acceptance, review, and
+documentation. `examples/terminal-ux-sticky.tape` is required in `terminal-acceptance` through the
+pinned `joshka/betamax-action` integration, using released Betamax 0.1.22. Its screenshots and JSON
+are retained by the existing always-run artifact upload. Local refresh commands and source/tool
+identity are recorded in the walkthrough.
