@@ -22,9 +22,9 @@ MouseMove 29 10
 MouseDown Left
 # Keep the drag active while the terminal grid changes.
 Resize 50 16
-AssertCells 29 8 '["1","5","0","0"]'
-# The compact viewport omits two metadata rows; use the new source-cell position.
-MouseMove 32 8
+AssertCells 29 10 '["1","5","0","0"]'
+# File headers remain visible at compact height; the source row stays at row 10.
+MouseMove 32 10
 MouseUp Left
 Type "c"
 AssertText 'Text preview: "1500"'

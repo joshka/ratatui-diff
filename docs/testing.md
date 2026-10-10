@@ -25,7 +25,10 @@ Build this checkout's viewer with `cargo build --example viewer --locked`, then 
 replays the `examples/terminal-ux-*.tape` cases. Set `BETAMAX` to an explicit executable path;
 optionally set `BETAMAX_VERSION` to require its reported version. A source-built executable may
 report the preceding release version, so record its immutable source revision and build command
-alongside preliminary evidence. Set `BETAMAX_REVISION` to retain that revision in `tool.txt`.
+alongside preliminary evidence. Set `BETAMAX_REVISION` to retain that revision in `tool.txt`. Use
+`--case files` for the file-folding scenario alone; repeat `--case` to select several cases. Exact
+Unicode/source checkpoint checks run when their resize, Unicode, and multi-file tapes are all
+selected. Every selected tape still runs its own assertions and retains failure diagnostics.
 
 Provisional validation uses Betamax revision
 [`9a7a34597ae08f428b8363269571325e87d0984f`](https://github.com/joshka/betamax/commit/9a7a34597ae08f428b8363269571325e87d0984f),
@@ -49,6 +52,11 @@ preview; these checks make no OS clipboard claim.
 The context fixture adds keyboard and mouse fold expansion, collapse, search reveal, and live resize
 in split/wrapped/monochrome mode. Its paced GIF explains the interaction; PNG/JSON checkpoints and
 focused fold cells/styles check the rendered state independently of recording readability.
+
+The files fixture adds header clicks, `Enter` for the current file, and `A`/`Z` for all files. It
+exercises text, binary, and mode-only headers alongside independent context controls. Public
+file-folding integration tests check source extraction, explicit reveal, navigation, geometry
+changes, and document replacement without requiring terminal input.
 
 Logs, checkpoint PNG/JSON, tool identity, and Betamax failure diagnostics live under
 `media/terminal-ux/`. The runner returns nonzero if any tape or exact-source check fails and

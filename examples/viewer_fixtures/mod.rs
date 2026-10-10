@@ -7,6 +7,7 @@ pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
     match name {
         "showcase" => showcase(),
         "context" => context(),
+        "files" => files(),
         "unicode" => unicode(),
         "unicode-text" => unicode_text(),
         "whitespace" => whitespace(),
@@ -16,6 +17,39 @@ pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
         )
         .into()),
     }
+}
+
+fn files() -> Result<DiffDocument, Box<dyn Error>> {
+    let mut files = Vec::new();
+    for path in [
+        "src/routes.txt",
+        "src/settings.txt",
+        "docs/review-guide.txt",
+    ] {
+        let old: String = (1..=40)
+            .map(|line| format!("rule {line:02}: retain source context\n"))
+            .collect();
+        let new = old.replace("rule 06: retain", "rule 06: revised").replace(
+            "rule 35: retain source context\n",
+            "rule 35: revised source context\nrule 35: extra detail\n",
+        );
+        files.push(compared_file(path, &old, &new, usize::MAX));
+    }
+    files.push(DiffFile {
+        old_path: Some("assets/banner.png".into()),
+        new_path: Some("assets/banner.png".into()),
+        metadata: vec![],
+        binary: true,
+        hunks: vec![],
+    });
+    files.push(DiffFile {
+        old_path: Some("scripts/check.sh".into()),
+        new_path: Some("scripts/check.sh".into()),
+        metadata: vec!["old mode 100644".into(), "new mode 100755".into()],
+        binary: false,
+        hunks: vec![],
+    });
+    Ok(DiffDocument::new(files)?)
 }
 
 fn context() -> Result<DiffDocument, Box<dyn Error>> {

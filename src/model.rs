@@ -300,6 +300,47 @@ impl DiffDocument {
     pub fn files(&self) -> &[DiffFile] {
         &self.files
     }
+
+    /// Obtain a file-folding handle before the first render, or `None` for an absent file.
+    ///
+    /// The handle identifies this document and its zero-based file index. A cloned document
+    /// preserves its handles; a newly constructed document has a different identity even when
+    /// its paths and source match. Hosts should restore saved state by resolving paths to indexes
+    /// in the current document, then obtaining fresh handles.
+    ///
+    /// A fresh [`crate::DiffState`] accepts file preferences for the first handle's document.
+    /// Handles from other documents are rejected until rendering replaces the bound document.
+    /// Rendering the matching document preserves queued preferences; rendering another clears
+    /// them. Files default to expanded. Context-fold handles require layout and are obtained
+    /// through [`crate::DiffState::context_folds`] after rendering.
+    ///
+    /// # Example
+    ///
+    /// Restore a saved collapsed file before drawing any expanded frame:
+    ///
+    /// ```
+    /// use ratatui_core::buffer::Buffer;
+    /// use ratatui_core::layout::Rect;
+    /// use ratatui_core::widgets::StatefulWidget;
+    /// use ratatui_diff::{Diff, DiffDocument, DiffState};
+    ///
+    /// let document = DiffDocument::from_text("old\n", "new\n");
+    /// let file = document.file_fold(0).unwrap();
+    /// let mut state = DiffState::new();
+    /// assert!(state.set_file_expanded(&file, false));
+    /// let area = Rect::new(0, 0, 60, 12);
+    /// let mut buffer = Buffer::empty(area);
+    /// (&Diff::new(&document)).render(area, &mut buffer, &mut state);
+    /// assert!(!state.file_expanded(&file));
+    /// assert_eq!(state.row_count(), 1);
+    /// ```
+    pub fn file_fold(&self, file: usize) -> Option<crate::FileFold> {
+        self.files.get(file)?;
+        Some(crate::FileFold {
+            file,
+            document: self.id,
+        })
+    }
 }
 
 /// Allocate a cache identity independent of allocation addresses.

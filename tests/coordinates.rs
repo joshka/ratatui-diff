@@ -24,7 +24,7 @@ fn unicode_tabs_controls_and_notation_keep_source_bytes() {
     let area = Rect::new(7, 9, 40, 8);
     assert_eq!(state.hit_test(8, 11), None);
     render(&widget, area, &mut state);
-    assert_eq!(state.hit_test(7, 9), Some(HitTest::Header { file: 0 }));
+    assert!(matches!(state.hit_test(7, 9), Some(HitTest::FileHeader { fold }) if fold.file() == 0));
     for x in 8..12 {
         assert_eq!(bytes(&state, x, 11), 0..1);
     }

@@ -1,5 +1,6 @@
 """Replay focused consumer tapes, retaining logs and Betamax failure artifacts."""
 
+import argparse
 import os
 from pathlib import Path
 import subprocess
@@ -7,10 +8,14 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 ARTIFACTS = ROOT / "media/terminal-ux"
-TAPES = ("resize", "ux", "unicode", "multi-file", "folding")
+TAPES = ("resize", "ux", "unicode", "multi-file", "folding", "files")
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--case", action="append", choices=TAPES, dest="cases",
+                        help="Replay only this case; repeat to select multiple cases.")
+    cases = parser.parse_args().cases or TAPES
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     betamax = os.environ.get("BETAMAX", "betamax")
     version = subprocess.check_output([betamax, "--version"], text=True).strip()
@@ -26,7 +31,7 @@ def main():
     print(f"Terminal UX: {betamax} ({version})", flush=True)
 
     failed = []
-    for name in TAPES:
+    for name in cases:
         tape = f"examples/terminal-ux-{name}.tape"
         command = [sys.executable, str(ROOT / "scripts/capture.py"), tape]
         with (ARTIFACTS / f"{name}.log").open("w") as log:
@@ -37,8 +42,9 @@ def main():
             failed.append(name)
     if failed:
         raise SystemExit(f"Failed tapes: {', '.join(failed)}. Inspect {ARTIFACTS}")
-    subprocess.run([sys.executable, str(ROOT / "scripts/check-terminal-ux.py")],
-                   cwd=ROOT, check=True)
+    if {"resize", "unicode", "multi-file"}.issubset(cases):
+        subprocess.run([sys.executable, str(ROOT / "scripts/check-terminal-ux.py")],
+                       cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":

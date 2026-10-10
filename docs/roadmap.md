@@ -9,11 +9,13 @@ Literal search, source hit-testing, selection, mouse dragging, and source-text e
 implemented. Clipboard access remains with the host. See the
 [coordinate](interaction-coordinates.md) and [selection](selection.md) contracts.
 
-Retained context can be folded within supplied hunks. Generated diffs opt into full retention with
-`DiffDocument::compare(old, new, usize::MAX)`; the default comparison still retains three context
-lines. Folding preserves searchable and extractable source. Missing patch text and context discarded
-during comparison require a new document supplied by the host. Identical generated inputs continue
-to have no hunks. See [architecture](architecture.md) for ownership and missing-data boundaries.
+Files and retained context within supplied hunks can be folded through programmatic state controls.
+Hosts can restore file preferences before the first render; see [folding controls](folding.md).
+Generated diffs opt into full retention with `DiffDocument::compare(old, new, usize::MAX)`; the
+default comparison still retains three context lines. Folding preserves searchable and extractable
+source. Missing patch text and context discarded during comparison require a new document supplied
+by the host. Identical generated inputs continue to have no hunks. See
+[architecture](architecture.md) for ownership and missing-data boundaries.
 
 These capabilities have no release commitment. Record implementation evidence and compatibility
 impact when selecting one; remove it from this list only when its documented contract is fulfilled.

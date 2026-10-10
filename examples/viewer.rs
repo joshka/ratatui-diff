@@ -12,8 +12,8 @@ use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, StatefulWidget};
 use ratatui_diff::{
-    Diff, DiffDocument, DiffState, DiffTheme, HitTest, SelectionMotion, Side, SourceBoundary,
-    SourcePosition, SourceSelection, ViewMode,
+    Diff, DiffDocument, DiffState, DiffTheme, FileFold, HitTest, SelectionMotion, Side,
+    SourceBoundary, SourcePosition, SourceSelection, ViewMode,
 };
 
 #[path = "viewer_fixtures/mod.rs"]
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut arguments: Vec<_> = arguments.iter().map(String::as_str).collect();
     if arguments.as_slice() == ["--help"] {
         println!(
-            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nFixtures: showcase (default), context, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
+            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nFixtures: showcase (default), context, files, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
         );
         return Ok(());
     }
@@ -83,6 +83,10 @@ fn capture_widget<'a>(
     let widget = Diff::new(document).theme(DiffTheme::aardvark_ink());
     let split = widget.mode(ViewMode::Split);
     Ok(match variant {
+        "files-before" | "files-expanded" | "files-collapsed" => widget.context_lines(Some(3)),
+        "files-expanded-split" => split.context_lines(Some(3)).wrap(true),
+        "files-collapsed-split" => split.context_lines(Some(3)),
+        "files-collapsed-mono" => split.context_lines(Some(3)).theme(DiffTheme::monochrome()),
         "context-before" => widget,
         "context-narrow-before" => split.wrap(true),
         "context-split-before" => split,
@@ -116,6 +120,12 @@ fn capture(
     variant: &str,
 ) -> Result<(), Box<dyn Error>> {
     let mut state = DiffState::new();
+    if variant.starts_with("files-collapsed") {
+        for index in 0..document.files().len() {
+            let fold = document.file_fold(index).expect("validated file index");
+            state.set_file_expanded(&fold, false);
+        }
+    }
     if variant.starts_with("selection-") {
         let anchor = SourceBoundary {
             position: SourcePosition {
@@ -165,6 +175,7 @@ fn run(
     let mut body_area = Rect::default();
     let mut query = String::new();
     let mut editing_search = false;
+    let mut focused_file = None;
     loop {
         terminal.draw(|frame| {
             // Outer spacing belongs to the host; the diff fills its supplied rectangle.
@@ -217,6 +228,9 @@ fn run(
                 .word_highlights(words)
                 .theme(theme);
             frame.render_stateful_widget(&widget, body, &mut state);
+            focused_file = focused_file.filter(|&fold| (body.y..body.bottom()).any(|y| {
+                matches!(state.hit_test(body.x,y),Some(HitTest::FileHeader{fold:visible}) if visible == fold)
+            }));
             if let Some(ref text) = copy_preview {
                 frame.render_widget(
                     Paragraph::new(format!("Text preview: {text:?}")),
@@ -224,6 +238,10 @@ fn run(
                 );
             } else if let Some((x, y)) = pointer {
                 let feedback = match state.hit_test(x, y) {
+                    Some(HitTest::FileHeader {fold}) => {
+                        let status = if state.file_expanded(&fold) { "expanded" } else { "collapsed" };
+                        format!("File {} · {status} · click to toggle", fold.file()+1)
+                    }
                     Some(HitTest::Source { old, new }) => {
                         let range = new.or(old).expect("source hit has a side");
                         format!(
@@ -248,6 +266,11 @@ fn run(
                     feedback_area,
                 );
             }
+            if let Some(fold) = focused_file {
+                let file = &document.files()[fold.file()];
+                let path = file.new_path.as_deref().or(file.old_path.as_deref()).unwrap_or("");
+                frame.render_widget(Paragraph::new(format!("File focus · {path} · Enter toggle")),feedback_area);
+            }
             let help = interaction_hint(
                 editing_search,
                 state.selection().is_some(),
@@ -261,6 +284,7 @@ fn run(
         }
         let event = event::read()?;
         if let Event::Mouse(mouse) = event {
+            focused_file = None;
             pointer = Some((mouse.column, mouse.row));
             update_pointer_selection(&document, &mut state, mouse.column, mouse.row, mouse.kind);
             copy_preview = None;
@@ -378,6 +402,24 @@ fn run(
                 KeyCode::End => state.end(),
                 KeyCode::Char(']') => state.next_hunk(),
                 KeyCode::Char('[') => state.previous_hunk(),
+                KeyCode::Tab | KeyCode::BackTab => {
+                    focused_file = next_visible_file(
+                        &state,
+                        body_area,
+                        focused_file,
+                        key.code == KeyCode::Tab,
+                    );
+                    pointer = None;
+                }
+                KeyCode::Enter => {
+                    if let Some(fold) =
+                        focused_file.or_else(|| current_file(&state, pointer, body_area))
+                    {
+                        state.set_file_expanded(&fold, !state.file_expanded(&fold));
+                    }
+                }
+                KeyCode::Char('A') => set_all_files(&mut state, true),
+                KeyCode::Char('Z') => set_all_files(&mut state, false),
                 KeyCode::Char('e') => {
                     let fold = (body_area.y..body_area.bottom()).find_map(|y| {
                         if let Some(HitTest::Fold { fold }) = state.hit_test(body_area.x, y) {
@@ -426,6 +468,62 @@ fn run(
     Ok(())
 }
 
+/// Keyboard focus belongs to the host, independently of final-viewport clamping.
+fn next_visible_file(
+    state: &DiffState,
+    area: Rect,
+    focused: Option<FileFold>,
+    forward: bool,
+) -> Option<FileFold> {
+    let files: Vec<_> = (area.y..area.bottom())
+        .filter_map(|y| {
+            if let Some(HitTest::FileHeader { fold }) = state.hit_test(area.x, y) {
+                Some(fold)
+            } else {
+                None
+            }
+        })
+        .collect();
+    if files.is_empty() {
+        return None;
+    }
+    let index = files.iter().position(|&fold| Some(fold) == focused);
+    let next = match (index, forward) {
+        (None, true) => 0,
+        (None, false) => files.len() - 1,
+        (Some(index), true) => (index + 1) % files.len(),
+        (Some(index), false) => (index + files.len() - 1) % files.len(),
+    };
+    Some(files[next])
+}
+
+/// File controls are independent from the example's e/z retained-context controls.
+fn current_file(state: &DiffState, pointer: Option<(u16, u16)>, area: Rect) -> Option<FileFold> {
+    if let Some((x, y)) = pointer
+        && let Some(HitTest::FileHeader { fold }) = state.hit_test(x, y)
+    {
+        return Some(fold);
+    }
+    let file = match state.hit_test(area.x, area.y)? {
+        HitTest::FileHeader { fold } => return Some(fold),
+        HitTest::Header { file } => file,
+        HitTest::Fold { fold } => fold.file,
+        _ => {
+            state
+                .source_at(state.offset(), Side::New)
+                .or_else(|| state.source_at(state.offset(), Side::Old))?
+                .file
+        }
+    };
+    state.file_folds().get(file).copied()
+}
+
+fn set_all_files(state: &mut DiffState, expanded: bool) {
+    for fold in state.file_folds().to_vec() {
+        state.set_file_expanded(&fold, expanded);
+    }
+}
+
 /// Host drag policy: start at the leading edge, extend to the hit grapheme's trailing edge.
 fn update_pointer_selection(
     document: &DiffDocument,
@@ -434,6 +532,12 @@ fn update_pointer_selection(
     y: u16,
     kind: MouseEventKind,
 ) {
+    if kind == MouseEventKind::Down(MouseButton::Left)
+        && let Some(HitTest::FileHeader { fold }) = state.hit_test(x, y)
+    {
+        state.set_file_expanded(&fold, !state.file_expanded(&fold));
+        return;
+    }
     if kind == MouseEventKind::Down(MouseButton::Left)
         && let Some(HitTest::Fold { fold }) = state.hit_test(x, y)
     {
@@ -492,9 +596,9 @@ fn interaction_hint(editing: bool, selecting: bool, searching: bool, width: u16)
             "f/F match · v select · / search · Esc clear search · q quit"
         }
     } else if width < 45 {
-        "e expand · z collapse · / search · q quit"
+        "Tab file · Enter toggle · A/Z all"
     } else {
-        "Arrows scroll · e expand · z collapse · / search · s split · w wrap · q quit"
+        "Tab file · Enter toggle · A/Z files · e/z context · / search · q quit"
     }
 }
 

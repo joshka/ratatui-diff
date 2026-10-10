@@ -94,9 +94,100 @@ impl ContextFold {
     }
 }
 
+/// A validated file identity used by whole-file expansion controls.
+///
+/// Obtain a handle from [`DiffState::file_folds`] after rendering, or from
+/// [`DiffDocument::file_fold`] to restore expansion before the first frame. Handles retain their
+/// document identity and remain valid through presentation changes and document clones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FileFold {
+    pub(crate) file: usize,
+    pub(crate) document: u64,
+}
+
+impl FileFold {
+    /// Zero-based index of the file within its document.
+    pub fn file(&self) -> usize {
+        self.file
+    }
+}
+
+/// Cached file labels and supplied-line change counts; never recomputed in a steady frame.
+#[derive(Debug)]
+struct FileSummary {
+    path: String,
+    changes: String,
+}
+
+impl FileSummary {
+    fn new(file: &crate::DiffFile) -> Self {
+        let path = match (&file.old_path, &file.new_path) {
+            (Some(old), Some(new)) if old != new => format!("{old} → {new}"),
+            (_, Some(path)) | (Some(path), _) => path.clone(),
+            (None, None) => unreachable!("validated files have a path"),
+        };
+        let mut added = 0;
+        let mut removed = 0;
+        for line in file.hunks.iter().flat_map(|hunk| &hunk.lines) {
+            match line.kind {
+                LineKind::Insert => added += 1,
+                LineKind::Delete => removed += 1,
+                LineKind::Context => {}
+            }
+        }
+        let changes = if file.binary {
+            "binary".into()
+        } else if file.hunks.is_empty() && !file.metadata.is_empty() {
+            "metadata".into()
+        } else {
+            format!("+{added} −{removed}")
+        };
+        Self { path, changes }
+    }
+
+    fn label(&self, expanded: bool, width: usize) -> String {
+        let disclosure = if expanded { '▾' } else { '▸' };
+        let suffix = format!(" · {}", self.changes);
+        let path_width = width.saturating_sub(2 + suffix.width());
+        if path_width == 0 {
+            return format!("{disclosure} {}", self.changes);
+        }
+        let path = if self.path.width() <= path_width {
+            self.path.clone()
+        } else {
+            let mut path = String::new();
+            let mut used = 0;
+            for grapheme in self.path.graphemes(true) {
+                let cells = grapheme.width();
+                if used + cells > path_width.saturating_sub(1) {
+                    break;
+                }
+                path.push_str(grapheme);
+                used += cells;
+            }
+            path.push('…');
+            path
+        };
+        format!("{disclosure} {path}{suffix}")
+    }
+}
+
+/// A navigation request resolved after rebuilding the displayed-row index.
+#[derive(Debug, Clone, Copy)]
+enum RevealTarget {
+    Source(SourcePosition),
+    File(usize),
+    Hunk { file: usize, hunk: usize },
+}
+
 /// The semantic region occupying a cell in the last rendered diff viewport.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HitTest {
+    /// A whole-file expansion control. Metadata, hunk headers, and gaps remain [`Self::Header`].
+    FileHeader {
+        /// Document-scoped file identity; inspect expansion with [`DiffState::file_expanded`].
+        fold: FileFold,
+    },
     /// Collapsed retained context. This is an expansion control, without source bytes.
     Fold {
         /// Stable source ranges represented by the summary.
@@ -116,7 +207,7 @@ pub enum HitTest {
         /// Modified source line, when available.
         new: Option<SourcePosition>,
     },
-    /// A file, metadata, hunk header, or unavailable-context cue.
+    /// Metadata, a hunk header, or an unavailable-context cue.
     /// Unavailable context has no expansion control or source coordinates.
     Header {
         /// Zero-based file index.
@@ -183,6 +274,7 @@ struct Row {
     fold: Option<usize>,
     hidden: Option<usize>,
     gap: bool,
+    file_header: bool,
 }
 
 /// One displayed continuation of a logical row.
@@ -275,7 +367,8 @@ pub struct DiffState {
     screen: Vec<ScreenRow>,
     // Absolute screen-row indexes of file and hunk headers, in display order.
     files: Vec<usize>,
-    hunks: Vec<usize>,
+    // (first displayed row, file, logical hunk-header row), including closed files.
+    hunks: Vec<(usize, usize, usize)>,
     // Sorted (file index, source line, first screen row) tuples for binary lookup.
     old_sources: Vec<(usize, usize, usize)>,
     new_sources: Vec<(usize, usize, usize)>,
@@ -286,10 +379,78 @@ pub struct DiffState {
     folds: Vec<ContextFold>,
     expanded: HashSet<ContextFold>,
     folds_dirty: bool,
-    pending_source: Option<SourcePosition>,
+    pending: Option<RevealTarget>,
+    file_document: Option<u64>,
+    file_folds: Vec<FileFold>,
+    file_summaries: Vec<FileSummary>,
+    collapsed_files: HashSet<usize>,
 }
 
 impl DiffState {
+    /// All supplied files from the last render, including binary and metadata-only files.
+    ///
+    /// Before the first render this is empty; [`DiffDocument::file_fold`] issues validated handles
+    /// for restoring saved expansion preferences before drawing.
+    pub fn file_folds(&self) -> &[FileFold] {
+        &self.file_folds
+    }
+
+    /// Whether a file is expanded. Files default to expanded.
+    ///
+    /// An unbound state accepts document-issued handles without binding itself. After the first
+    /// setter or render, handles from another document return false.
+    pub fn file_expanded(&self, fold: &FileFold) -> bool {
+        self.file_document
+            .is_none_or(|document| document == fold.document)
+            && !self.collapsed_files.contains(&fold.file)
+    }
+
+    /// Expand or collapse a whole file on the next render, retaining its header.
+    ///
+    /// A fresh state binds to the first handle's document, allowing initial collapse without an
+    /// expanded first frame. Further foreign handles return false until a render rebinds state.
+    /// Rendering another document clears file preferences; clones retain their identities.
+    /// Valid unchanged requests return true and leave hit-testing intact. A real change invalidates
+    /// mapping until redraw. Collapsing the file at the viewport anchors its retained header;
+    /// off-screen changes preserve the current source anchor. Nested context expansion is retained.
+    /// Manual collapse cancels pending search and selection reveal so the file stays closed.
+    pub fn set_file_expanded(&mut self, fold: &FileFold, expanded: bool) -> bool {
+        if self
+            .file_document
+            .is_some_and(|document| document != fold.document)
+        {
+            return false;
+        }
+        self.file_document = Some(fold.document);
+        if self.collapsed_files.contains(&fold.file) == !expanded {
+            return true;
+        }
+        if expanded {
+            self.collapsed_files.remove(&fold.file);
+        } else {
+            self.collapsed_files.insert(fold.file);
+        }
+        let current = self
+            .screen
+            .get(self.offset)
+            .is_some_and(|screen| self.rows[screen.row].file == fold.file);
+        if !expanded {
+            self.pending = self.pending.filter(|target| match target {
+                RevealTarget::Source(position) => position.file != fold.file,
+                RevealTarget::Hunk { file, .. } => *file != fold.file,
+                RevealTarget::File(_) => true,
+            });
+        }
+        if current {
+            self.pending = Some(RevealTarget::File(fold.file));
+        }
+        self.folds_dirty = true;
+        self.rendered = None;
+        self.search.reveal = false;
+        self.reveal_selection = false;
+        true
+    }
+
     /// All retained-context fold candidates from the last render, including expanded ones.
     pub fn context_folds(&self) -> &[ContextFold] {
         &self.folds
@@ -326,11 +487,11 @@ impl DiffState {
                                 .is_some_and(|index| self.folds[index] == *fold)
                         });
                 if visible {
-                    self.pending_source = Some(SourcePosition {
+                    self.pending = Some(RevealTarget::Source(SourcePosition {
                         file: fold.file,
                         side: Side::Old,
                         line: fold.old.start,
-                    });
+                    }));
                 }
             } else {
                 self.expanded.remove(fold);
@@ -350,6 +511,26 @@ impl DiffState {
     }
 
     fn expand_source(&mut self, position: SourcePosition) -> bool {
+        let sources = match position.side {
+            Side::Old => &self.old_sources,
+            Side::New => &self.new_sources,
+        };
+        if sources
+            .binary_search_by_key(&(position.file, position.line), |&(file, line, _)| {
+                (file, line)
+            })
+            .is_err()
+        {
+            return false;
+        }
+        let mut changed = false;
+        if self.collapsed_files.contains(&position.file) {
+            let fold = self.file_folds[position.file];
+            let selection_reveal = self.reveal_selection;
+            self.set_file_expanded(&fold, true);
+            self.reveal_selection = selection_reveal;
+            changed = true;
+        }
         let index = self.folds.partition_point(|fold| {
             let range = match position.side {
                 Side::Old => &fold.old,
@@ -357,19 +538,17 @@ impl DiffState {
             };
             fold.file < position.file || (fold.file == position.file && range.end <= position.line)
         });
-        let Some(fold) = self
+        if let Some(fold) = self
             .folds
             .get(index)
             .filter(|fold| fold.contains(position))
             .cloned()
-        else {
-            return false;
-        };
-        if self.context_expanded(&fold) {
-            return false;
+            && !self.context_expanded(&fold)
+        {
+            self.set_context_expanded(&fold, true);
+            changed = true;
         }
-        self.set_context_expanded(&fold, true);
-        true
+        changed
     }
 
     /// Inspect the current source selection. It survives layout changes, but not document
@@ -666,6 +845,11 @@ impl DiffState {
             return Some(HitTest::Padding);
         };
         let row = &self.rows[screen.row];
+        if row.file_header {
+            return Some(HitTest::FileHeader {
+                fold: self.file_folds[row.file],
+            });
+        }
         if let Some(fold) = row.fold {
             return Some(HitTest::Fold {
                 fold: self.folds[fold].clone(),
@@ -807,14 +991,15 @@ impl DiffState {
         self.clamp();
     }
 
-    /// Jump to the first hunk header strictly below the top displayed row.
+    /// Jump to the next original hunk header, opening its containing file if collapsed.
+    /// At a closed file header this opens that file's first hunk.
     ///
     /// Leaves the viewport unchanged if none exists. The target is clamped to the final viewport.
     pub fn next_hunk(&mut self) {
         self.jump(true, false);
     }
 
-    /// Jump to the last hunk header strictly above the top displayed row.
+    /// Jump to the last original hunk header above the top row, opening its file if collapsed.
     ///
     /// Inside a hunk, this returns to its header. At its header, this selects the preceding hunk.
     /// Leaves the viewport unchanged if none exists.
@@ -866,7 +1051,7 @@ impl DiffState {
     /// Retained lines inside a collapsed fold expand and scroll on the next render.
     pub fn scroll_to_source(&mut self, position: SourcePosition) -> bool {
         if self.expand_source(position) {
-            self.pending_source = Some(position);
+            self.pending = Some(RevealTarget::Source(position));
             return true;
         }
         let index = match position.side {
@@ -877,7 +1062,7 @@ impl DiffState {
             index.binary_search_by_key(&(position.file, position.line), |&(f, l, _)| (f, l))
         {
             if self.folds_dirty {
-                self.pending_source = Some(position);
+                self.pending = Some(RevealTarget::Source(position));
             }
             self.offset = index[n].2;
             self.clamp();
@@ -894,17 +1079,47 @@ impl DiffState {
             .min(self.screen.len().saturating_sub(self.height.max(1)));
     }
 
-    // Strict comparisons skip the current header; clamping may leave a later target below the top.
+    // File navigation keeps closed headers; hunk navigation opens the original target's file.
     fn jump(&mut self, forward: bool, files: bool) {
-        let targets = if files { &self.files } else { &self.hunks };
-        let n = if forward {
-            targets.iter().copied().find(|&n| n > self.offset)
+        if files {
+            let target = if forward {
+                self.files.iter().copied().find(|&row| row > self.offset)
+            } else {
+                self.files
+                    .iter()
+                    .copied()
+                    .rev()
+                    .find(|&row| row < self.offset)
+            };
+            if let Some(target) = target {
+                self.offset = target;
+                self.clamp();
+            }
+            return;
+        }
+        let target = if forward {
+            self.hunks.iter().copied().find(|&(row, file, _)| {
+                row > self.offset || (row == self.offset && self.collapsed_files.contains(&file))
+            })
         } else {
-            targets.iter().copied().rev().find(|&n| n < self.offset)
+            self.hunks
+                .iter()
+                .copied()
+                .rev()
+                .find(|&(row, _, _)| row < self.offset)
         };
-        if let Some(n) = n {
-            self.offset = n;
-            self.clamp();
+        if let Some((row, file, logical)) = target {
+            if self.collapsed_files.contains(&file) {
+                let fold = self.file_folds[file];
+                self.set_file_expanded(&fold, true);
+                self.pending = Some(RevealTarget::Hunk {
+                    file,
+                    hunk: self.rows[logical].hunk.expect("indexed hunk header"),
+                });
+            } else {
+                self.offset = row;
+                self.clamp();
+            }
         }
     }
 }
@@ -1058,9 +1273,10 @@ impl<'a> Diff<'a> {
         self
     }
 
-    /// Retain a source anchor, rebuild invalidated layout, then restore and clamp the viewport.
+    /// Retain a file-header or source anchor, rebuild layout, then restore and clamp the viewport.
     ///
-    /// The anchor is the first source line at or below the old offset, preferring the old side.
+    /// A topmost file header remains the anchor; otherwise use the first source line at or below
+    /// the old offset, preferring the old side.
     /// Width, gutter, and wrapping changes reuse logical rows; mode, document, tab, or whitespace
     /// changes rebuild them. Height and styles do not invalidate geometry.
     fn prepare(self, area: Rect, state: &mut DiffState) {
@@ -1094,7 +1310,11 @@ impl<'a> Diff<'a> {
             .key
             .is_some_and(|key| key.document != self.document.id)
         {
-            state.pending_source = None;
+            state.pending = None;
+        }
+        if state.file_document != Some(self.document.id) {
+            state.file_document = Some(self.document.id);
+            state.collapsed_files.clear();
         }
         state.height = usize::from(area.height);
         if state.key == Some(key) && !state.folds_dirty {
@@ -1110,11 +1330,21 @@ impl<'a> Diff<'a> {
         // Screen offsets change with wrapping or mode; a source location survives both.
         let same_document = state.key.is_some_and(|k| k.document == key.document);
         let anchor = if same_document {
-            (state.offset..state.screen.len()).find_map(|n| {
-                state
-                    .source_at(n, Side::Old)
-                    .or_else(|| state.source_at(n, Side::New))
-            })
+            let top = state
+                .screen
+                .get(state.offset)
+                .map(|screen| &state.rows[screen.row]);
+            if let Some(row) = top.filter(|row| row.file_header) {
+                Some(RevealTarget::File(row.file))
+            } else {
+                (state.offset..state.screen.len())
+                    .find_map(|n| {
+                        state
+                            .source_at(n, Side::Old)
+                            .or_else(|| state.source_at(n, Side::New))
+                    })
+                    .map(RevealTarget::Source)
+            }
         } else {
             None
         };
@@ -1146,17 +1376,38 @@ impl<'a> Diff<'a> {
         // Replacing the document resets navigation; resizing retains the old source anchor.
         state.key = Some(key);
         state.offset = if same_document { old_offset } else { 0 };
-        if let Some(anchor) = state.pending_source.take().or(anchor) {
-            let index = match anchor.side {
-                Side::Old => &state.old_sources,
-                Side::New => &state.new_sources,
-            };
-            if let Ok(n) =
-                index.binary_search_by_key(&(anchor.file, anchor.line), |&(f, l, _)| (f, l))
-            {
-                state.offset = index[n].2;
+        let target = state.pending.take().or(anchor);
+        match target {
+            Some(RevealTarget::Source(position)) => {
+                let index = match position.side {
+                    Side::Old => &state.old_sources,
+                    Side::New => &state.new_sources,
+                };
+                if let Ok(n) = index
+                    .binary_search_by_key(&(position.file, position.line), |&(file, line, _)| {
+                        (file, line)
+                    })
+                {
+                    state.offset = index[n].2;
+                }
             }
+            Some(RevealTarget::File(file)) => {
+                state.offset = state.files[file];
+            }
+            Some(RevealTarget::Hunk { file, hunk }) => {
+                let index = state.hunks.partition_point(|&(_, target_file, row)| {
+                    (
+                        target_file,
+                        state.rows[row].hunk.expect("indexed hunk header"),
+                    ) < (file, hunk)
+                });
+                if let Some(&(screen, _, _)) = state.hunks.get(index) {
+                    state.offset = screen;
+                }
+            }
+            None => {}
         }
+
         if self.wrap || !same_document {
             state.horizontal = 0;
         }
@@ -1174,6 +1425,8 @@ impl<'a> Diff<'a> {
     fn build_logical_rows(self, state: &mut DiffState) {
         state.rows.clear();
         state.folds.clear();
+        state.file_folds.clear();
+        state.file_summaries.clear();
         let max_number = self
             .document
             .files
@@ -1186,12 +1439,16 @@ impl<'a> Diff<'a> {
             .unwrap_or(1);
         state.digits = max_number.to_string().len();
         for (file, source) in self.document.files.iter().enumerate() {
-            let label = format!(
-                "{} → {}",
-                source.old_path.as_deref().unwrap_or("/dev/null"),
-                source.new_path.as_deref().unwrap_or("/dev/null")
-            );
-            state.rows.push(header(file, None, &label, self.tab));
+            state.file_folds.push(FileFold {
+                file,
+                document: self.document.id,
+            });
+            let summary = FileSummary::new(source);
+            let label = summary.label(!state.collapsed_files.contains(&file), usize::MAX);
+            state.file_summaries.push(summary);
+            let mut file_header = header(file, None, &label, self.tab);
+            file_header.file_header = true;
+            state.rows.push(file_header);
             for text in &source.metadata {
                 state.rows.push(header(file, None, text, self.tab));
             }
@@ -1268,6 +1525,7 @@ impl<'a> Diff<'a> {
                             fold: None,
                             hidden: hidden_index,
                             gap: false,
+                            file_header: false,
                         });
                         n += 1;
                     } else {
@@ -1299,6 +1557,7 @@ impl<'a> Diff<'a> {
                                 fold: None,
                                 hidden: None,
                                 gap: false,
+                                file_header: false,
                             });
                         }
                         n = end;
@@ -1360,6 +1619,13 @@ impl<'a> Diff<'a> {
             .collect();
         // Synthetic controls are a single row. Short labels preserve count and action first.
         for row in &mut state.rows {
+            if row.file_header {
+                let label = state.file_summaries[row.file].label(
+                    !state.collapsed_files.contains(&row.file),
+                    usize::from(area.width),
+                );
+                row.left = header(row.file, None, &label, self.tab).left;
+            }
             if let Some(index) = row.fold {
                 let count = state.folds[index].line_count();
                 let label = format!("… {count} unchanged lines · expand");
@@ -1377,7 +1643,25 @@ impl<'a> Diff<'a> {
             }
         }
         let mut folded_screen = 0;
+        let mut file_screen = 0;
         for (n, row) in state.rows.iter().enumerate() {
+            if row.file_header {
+                file_screen = state.screen.len();
+            } else if state.collapsed_files.contains(&row.file) {
+                if let Some(hunk) = row.hunk
+                    && previous_hunk != Some(hunk)
+                {
+                    state.hunks.push((file_screen, row.file, n));
+                    previous_hunk = Some(hunk);
+                }
+                if let Some(line) = row.left.old {
+                    state.old_sources.push((row.file, line, file_screen));
+                }
+                if let Some(line) = row.right.as_ref().unwrap_or(&row.left).new {
+                    state.new_sources.push((row.file, line, file_screen));
+                }
+                continue;
+            }
             if let Some(index) = row.fold {
                 if expanded[index] {
                     continue;
@@ -1407,7 +1691,7 @@ impl<'a> Diff<'a> {
             let left = segments(
                 &row.left,
                 width,
-                self.wrap && row.fold.is_none() && !row.gap,
+                self.wrap && row.fold.is_none() && !row.gap && !row.file_header,
             );
             let right = row
                 .right
@@ -1424,7 +1708,7 @@ impl<'a> Diff<'a> {
             if let Some(h) = row.hunk
                 && previous_hunk != Some(h)
             {
-                state.hunks.push(start);
+                state.hunks.push((start, row.file, n));
                 previous_hunk = Some(h);
             }
             if let Some(l) = row.left.old {
@@ -1680,7 +1964,7 @@ impl Diff<'_> {
 
         // Wrapped segments start at their own column; unwrapped segments share the viewport offset.
         let synthetic = &state.rows[screen.row];
-        let base = if synthetic.fold.is_some() || synthetic.gap {
+        let base = if synthetic.fold.is_some() || synthetic.gap || synthetic.file_header {
             0
         } else if self.wrap {
             content.glyphs[segment.start].column
@@ -1839,6 +2123,7 @@ fn header(file: usize, hunk: Option<usize>, text: &str, tab: usize) -> Row {
         fold: None,
         hidden: None,
         gap: false,
+        file_header: false,
     }
 }
 
