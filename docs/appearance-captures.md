@@ -88,9 +88,10 @@ padding; it does not add a source column.
 Code blocks use the syntax colors from
 [VS Code Dark 2026](https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/2026-dark.json)
 on an ink-colored surface. Pandoc token classes approximate the theme's TextMate roles; the diff
-widget itself has no syntax highlighting. Adjust the `--code-*` variables in
-`scripts/appearance.css` to tune the guide without changing diff colors. For a closer Aardvark
-match, try `--code-keyword: #e48383` and `--code-function: #d58bf0`.
+widget has separately prepared optional syntax styles through the non-default `syntax` feature. See
+[syntax styling](syntax-styling.md) for source, palette, and composition contracts. Adjust the
+`--code-*` variables in `scripts/appearance.css` to tune the guide without changing diff colors. For
+a closer Aardvark match, try `--code-keyword: #e48383` and `--code-function: #d58bf0`.
 
 ## Literal search interaction
 
