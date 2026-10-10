@@ -76,6 +76,10 @@ MouseDown Left
 MouseUp Left
 Type "c"
 AssertAbsent "Text preview:"
+# The file header toggles its body; restore it before testing the blank split counterpart.
+MouseDown Left
+MouseUp Left
+AssertCells 29 10 '["1","5","0","0"]'
 Type "s"
 MouseMove 20 10
 MouseDown Left
