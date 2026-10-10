@@ -1,0 +1,85 @@
+{
+  "base_revision": "b5d6930cc4b5a61d430d431e9f2b3614dec0de1c",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+  "cpu": "Apple M2 Max",
+  "memory_bytes": "103079215104",
+  "environment": {
+    "RUSTFLAGS": null,
+    "CARGO_PROFILE_RELEASE_DEBUG": null,
+    "CARGO_PROFILE_RELEASE_LTO": null
+  },
+  "sha256": {
+    "Cargo.lock": "4b00b78a518a7d63ea961370176d1c960c8af8056bfbb3ad659f6a78b73c0b9c",
+    "Cargo.toml": "dbf3b2e73fa99169aa5335a65c4adb8222258928b3028cd03a62468358835138",
+    "src/syntax.rs": "e66c2b9535e7284d83bc6a82ec0e346f00a0b0684bf7ac0b59d3acbff2341174",
+    "benches/viewer.rs": "0eecb9d61ce957a1952cacd59923c41e48da97b29ddc33ca26484bd0fe6acbf9",
+    "benches/support/syntax.rs": "71130ce63f1dbd794fb2e8b2bc00ff71f64bb41388a7aaed954df66adcb23bbd"
+  },
+  "measurement_window_utc": [
+    "2026-10-10T03:22:22Z",
+    "2026-10-10T03:24:38Z"
+  ],
+  "bench_sha256": "623c42b13029169485f81caa39ca2ea0387dd550879de4ea7deb98518c55d926",
+  "c_compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin25.6.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin\n",
+  "commands": {
+    "criterion": [
+      "syntax/",
+      "--bench",
+      "--warm-up-time",
+      "0.1",
+      "--measurement-time",
+      "0.2",
+      "--sample-size",
+      "10",
+      "--noplot"
+    ],
+    "scroll_repeat": [
+      "syntax/scroll-",
+      "--bench",
+      "--warm-up-time",
+      "0.3",
+      "--measurement-time",
+      "1",
+      "--sample-size",
+      "20",
+      "--noplot"
+    ]
+  },
+  "effective_sample_size": 10,
+  "release_examples": {
+    "default": {
+      "bytes": 1592832,
+      "sha256": "b409f40362d64b87a2b7da8d343747b18a3a39aa49c0d5a0f5a777488ab81044",
+      "stripped_bytes": 1311936
+    },
+    "syntax": {
+      "bytes": 3580448,
+      "sha256": "7da991411a7a093bd94070c58ae2e4aac06e326ebcb3e06678501b42743584bf",
+      "stripped_bytes": 3142912
+    }
+  },
+  "raw_evidence_directory": "media/syntax-performance-2026-10-09",
+  "embedded_input_assets": {
+    "syntaxes-onig-newlines.bin": {
+      "bytes": 983684,
+      "sha256": "7b567f54cf1b4b33abb7b64258647c256f99043c4bee6804b38f9ef612d0110a"
+    },
+    "themes.bin": {
+      "bytes": 62593,
+      "sha256": "be28f0c1a167469c5bd1e5311d4d3503e6503b378791f2afb9e3e5f2f7f4642e"
+    },
+    "acknowledgements_full.bin": {
+      "bytes": 11715,
+      "sha256": "e4bf45ad159b67de6a7152874904728adb6421996eb15da01ca75406e6cd51fb"
+    }
+  },
+  "validation": [
+    "30 Criterion test-mode cases pass",
+    "38 Criterion mean estimates and ten samples per case validated",
+    "10 fresh probes validate all ten RSS phases",
+    "15 matched example runs return row count15",
+    "Focused bench Clippy -D warnings passes",
+    "Nightly rustfmt and rumdl/markdownlint pass"
+  ]
+}
