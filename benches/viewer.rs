@@ -1,7 +1,7 @@
 //! Preparation, layout, resize, and scrolling baselines.
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group};
 use ratatui_core::buffer::Buffer;
 use ratatui_core::layout::Rect;
 use ratatui_core::widgets::StatefulWidget;
@@ -27,11 +27,14 @@ fn benches(c: &mut Criterion) {
                 let mut buf = Buffer::empty(area);
                 let label = format!("{mode:?}-wrap-{wrap}");
                 group.bench_function(BenchmarkId::new(format!("layout-{label}"), count), |b| {
-                    b.iter(|| {
-                        let mut state = DiffState::new();
-                        (&widget).render(area, &mut buf, &mut state);
-                        black_box(state);
-                    })
+                    b.iter_batched(
+                        DiffState::new,
+                        |mut state| {
+                            (&widget).render(area, &mut buf, &mut state);
+                            black_box(state)
+                        },
+                        BatchSize::LargeInput,
+                    )
                 });
                 let mut state = DiffState::new();
                 let mut state_width = 100;
@@ -66,7 +69,16 @@ fn benches(c: &mut Criterion) {
                     },
                     byte: last.text.len() + 1,
                 };
-                state.set_selection(&document, SourceSelection { anchor, focus });
+                let selection = SourceSelection { anchor, focus };
+                if mode == ViewMode::Unified && !wrap {
+                    group.bench_function(BenchmarkId::new("selection-update", count), |b| {
+                        b.iter(|| black_box(state.set_selection(&document, selection)))
+                    });
+                    group.bench_function(BenchmarkId::new("selection-extract", count), |b| {
+                        b.iter(|| black_box(selection.text(&document)))
+                    });
+                }
+                assert!(state.set_selection(&document, selection));
                 group.bench_function(
                     BenchmarkId::new(format!("selection-scroll-{label}"), count),
                     |b| {
@@ -119,5 +131,17 @@ fn benches(c: &mut Criterion) {
     });
     group.finish();
 }
-criterion_group!(viewer, benches);
-criterion_main!(viewer);
+#[path = "support/scenarios.rs"]
+mod scenarios;
+
+criterion_group!(viewer, benches, scenarios::benches);
+#[path = "support/memory.rs"]
+mod memory;
+
+fn main() {
+    if std::env::var_os("RATATUI_DIFF_MEMORY").is_some() {
+        memory::run();
+    } else {
+        viewer();
+    }
+}
