@@ -1,0 +1,374 @@
+{
+  "baseline_revision": "b5d6930cc4b5a61d430d431e9f2b3614dec0de1c",
+  "local_measurement_date": "2026-10-09",
+  "window_start_utc": "2026-10-10T03:17:54Z",
+  "window_end_utc": "2026-10-10T03:21:16Z",
+  "window_seconds": 202,
+  "executable_sha256": "b69b793c4ca41705dedc355bc3cb3495e2eb6e0d9b6a1228f7c6f4f50232b334",
+  "driver_source_sha256": "77af1109f57e8b5b45d924b751107259aa7b9b34dae9b4f81184dd380960078f",
+  "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "machine": "Apple M2 Max, Darwin 25.6.0 arm64",
+  "profile_tool": "samply 0.13.1, 1000 Hz",
+  "matrix_cases": 240,
+  "profiles": {
+    "resize": {
+      "args": [
+        "1",
+        "100000",
+        "resize",
+        "split",
+        "wrap",
+        "expanded",
+        "500"
+      ],
+      "window_ms": [
+        1500,
+        3000
+      ]
+    },
+    "resize-open": {
+      "args": [
+        "1",
+        "100000",
+        "resize-open",
+        "split",
+        "wrap",
+        "expanded",
+        "500"
+      ],
+      "window_ms": [
+        3000,
+        13000
+      ]
+    },
+    "context-hidden": {
+      "args": [
+        "1",
+        "100000",
+        "context-first",
+        "split",
+        "wrap",
+        "closed",
+        "500"
+      ],
+      "window_ms": [
+        1000,
+        1900
+      ]
+    },
+    "file-many": {
+      "args": [
+        "100",
+        "1000",
+        "file-first",
+        "unified",
+        "nowrap",
+        "expanded",
+        "500"
+      ],
+      "window_ms": [
+        1000,
+        1700
+      ]
+    },
+    "initial-hidden": {
+      "args": [
+        "1",
+        "100000",
+        "initial",
+        "split",
+        "wrap",
+        "closed",
+        "20"
+      ],
+      "window_ms": null
+    }
+  },
+  "evidence_files": [
+    {
+      "path": "media/folding-profile/build.log",
+      "sha256": "33fd8c7784f265e81220de90c5ca70287f4fdd0ebbf626584d4e06639eae4b7d",
+      "bytes": 3450
+    },
+    {
+      "path": "media/folding-profile/context-hidden-profile.log",
+      "sha256": "bd9561efda75d1b543c9dba241fccd167f58af861c5a3163dd3f5e3bd36b47d4",
+      "bytes": 79
+    },
+    {
+      "path": "media/folding-profile/context-hidden-summary.txt",
+      "sha256": "8c61a2465e7f99507db1c4c13ea56ef80cceeaae1bf3da3c41721a2634d5fcbf",
+      "bytes": 3654
+    },
+    {
+      "path": "media/folding-profile/context-hidden-tail-summary.txt",
+      "sha256": "7f2a21ad46d4c39a7e5c96223506ce845eb3ec81711aec66b923fa3338ccd996",
+      "bytes": 3553
+    },
+    {
+      "path": "media/folding-profile/context-hidden.json.gz",
+      "sha256": "5167da244f06a15d9dbc1d32e8ffa793350fa7c7452f072d5285edc23c6e1281",
+      "bytes": 27701
+    },
+    {
+      "path": "media/folding-profile/context-hidden.json.syms.json",
+      "sha256": "8159206b3ffbf930d55f6fa99bc3125bec34e4b3ec80cf4a65d96292ceef8d30",
+      "bytes": 59290
+    },
+    {
+      "path": "media/folding-profile/executable.sha256",
+      "sha256": "a4b32251811527991b7466f7e40657d3cafe49b517f1ac0fd473b02686bf093b",
+      "bytes": 122
+    },
+    {
+      "path": "media/folding-profile/file-many-profile.log",
+      "sha256": "7252c859aa5b9ff568717df901b022e4990bcecf3dce291e8c326d951c6ce2ca",
+      "bytes": 76
+    },
+    {
+      "path": "media/folding-profile/file-many-summary.txt",
+      "sha256": "1a29b99a6a653bd549ea5de157e6e3ba33922e7bef0dd11bb9afc223bb9bd464",
+      "bytes": 3997
+    },
+    {
+      "path": "media/folding-profile/file-many-tail-summary.txt",
+      "sha256": "f4afb9d4aef765c62fa8eceaca9cc9cec798aa424e42683bdc2ceccdfb738010",
+      "bytes": 3987
+    },
+    {
+      "path": "media/folding-profile/file-many.json.gz",
+      "sha256": "5439aff7880021aee2ea7119c50e5f3f83b7e46e170a49b5eaf1e4ef57bfbc3f",
+      "bytes": 25203
+    },
+    {
+      "path": "media/folding-profile/file-many.json.syms.json",
+      "sha256": "71f2000aaaecaff1e549bb72d429221384209341f6faa3b428a219b7c2b28daa",
+      "bytes": 48748
+    },
+    {
+      "path": "media/folding-profile/initial-hidden-profile.log",
+      "sha256": "0c211bfc9ba650b0adee13fe784f10f31eafdf0d26f722ce2e01773997bc84cd",
+      "bytes": 74
+    },
+    {
+      "path": "media/folding-profile/initial-hidden-summary.txt",
+      "sha256": "b5bb4d439280f1f6e2a6b4532e9eddef8a44e0771d568034f4eb1edb779a3ce2",
+      "bytes": 3659
+    },
+    {
+      "path": "media/folding-profile/initial-hidden.json.gz",
+      "sha256": "9ec8d19b3a824270ff11bbf0367753edd47da231ab407492233e6a122795af50",
+      "bytes": 86445
+    },
+    {
+      "path": "media/folding-profile/initial-hidden.json.syms.json",
+      "sha256": "d83e6022d4984bd44e4978a8d65d23e361c5ff32fbb78f7f05df184c2c8d1322",
+      "bytes": 69327
+    },
+    {
+      "path": "media/folding-profile/matrix.log",
+      "sha256": "f4106cefee34a5e4f08d9fded92f55d7c00811db10b453a1dd5018e9cc74993e",
+      "bytes": 12700
+    },
+    {
+      "path": "media/folding-profile/measured-driver.rs",
+      "sha256": "77af1109f57e8b5b45d924b751107259aa7b9b34dae9b4f81184dd380960078f",
+      "bytes": 4764
+    },
+    {
+      "path": "media/folding-profile/rebuild.log",
+      "sha256": "29a22e3c14017c52382ee3bb27fbbd8156a4664b856a058401be2b0ee04ec6a6",
+      "bytes": 167
+    },
+    {
+      "path": "media/folding-profile/resize-open-profile.log",
+      "sha256": "2d0a8073226bf36b151b8cad5c96e5d276e9e1bb6f8807729ee33c3f2f4c206f",
+      "bytes": 75
+    },
+    {
+      "path": "media/folding-profile/resize-open-summary.txt",
+      "sha256": "226de3bda475043a57c876b81275b373bb0e3765edce59e839ad1152e7f156e2",
+      "bytes": 3279
+    },
+    {
+      "path": "media/folding-profile/resize-open-tail-summary.txt",
+      "sha256": "0ec54942d8ac49130b96e7d104447f987ae67a693503b572baf7024cfb5b4586",
+      "bytes": 3289
+    },
+    {
+      "path": "media/folding-profile/resize-open.json.gz",
+      "sha256": "55757452bc33586efd3975ee103df62b2c5ac1e13bf1c0f01881b594ed739f22",
+      "bytes": 141758
+    },
+    {
+      "path": "media/folding-profile/resize-open.json.syms.json",
+      "sha256": "2948375f0b795ecede57bdd5aeaa9a876fcb496d06b888e7cbe3b18f8dcaf7ff",
+      "bytes": 71819
+    },
+    {
+      "path": "media/folding-profile/resize-profile.log",
+      "sha256": "17ad9bacd921945a3cea6c69ab26bc0ce4f08844b4d332017b2101498fcb833d",
+      "bytes": 73
+    },
+    {
+      "path": "media/folding-profile/resize-summary.txt",
+      "sha256": "55df139ef22e34da7769bbc17d296548f05f6e5cca071e30aa8e961fea4612a8",
+      "bytes": 3499
+    },
+    {
+      "path": "media/folding-profile/resize-tail-summary.txt",
+      "sha256": "f54259867af17ea4d1aa26d43294d680545788ffc5964799bc147e6357ba553a",
+      "bytes": 3337
+    },
+    {
+      "path": "media/folding-profile/resize.json.gz",
+      "sha256": "468d3884824cff89f8e7adc36d1246d807ba637a30ef84bcf8a8360ac32613df",
+      "bytes": 39724
+    },
+    {
+      "path": "media/folding-profile/resize.json.syms.json",
+      "sha256": "fda81bf768e7b7008ce0a90b42bd6085c8253a98659f740134092929516f10cb",
+      "bytes": 77569
+    },
+    {
+      "path": "media/folding-profile/results.csv",
+      "sha256": "860aae3ab0300c16c9a34010e21ec9e4032b593581909059705f619f30f8ed15",
+      "bytes": 12775
+    },
+    {
+      "path": "media/folding-profile/window-end.txt",
+      "sha256": "793bbb76db4e9ef2f4ffc6c1dadd7356821bd8dad5ff95c99e2110482d0fb8a8",
+      "bytes": 21
+    },
+    {
+      "path": "media/folding-profile/window-start.txt",
+      "sha256": "520729a5c6a8c94bc25c9c18b56060ae16c68ab99b333a5c8b98c516a9ddcce0",
+      "bytes": 21
+    },
+    {
+      "path": "media/terminal-ux/file-folding-all-20261009.json",
+      "sha256": "5382ba3b1cafebf3b0e7f06ad83805691d1f43e8693392d29dee63a3169b879f",
+      "bytes": 2078
+    },
+    {
+      "path": "media/terminal-ux/file-folding-all-20261009.png",
+      "sha256": "2724cf6cc6fcf86cd8427d267a3f9c5f62dcb515923a48548ba94983ea5001c7",
+      "bytes": 58228
+    },
+    {
+      "path": "media/terminal-ux/file-folding-all-open-anchor-20261009.json",
+      "sha256": "5691349fd6a46a567a29ed2c7d975a005b7d7130883ed6d74420a671aca37c2d",
+      "bytes": 4666
+    },
+    {
+      "path": "media/terminal-ux/file-folding-collapsed-20261009.json",
+      "sha256": "5ad64392b518d5582e2076c552623080304dcb9fca314c3abf9cb8c0bd0266a3",
+      "bytes": 4763
+    },
+    {
+      "path": "media/terminal-ux/file-folding-collapsed-20261009.png",
+      "sha256": "9baf88159f81609fd4a36fd9cdf5f0e8ee7cd7333ff8d25e92db5e884ed2db56",
+      "bytes": 128380
+    },
+    {
+      "path": "media/terminal-ux/file-folding-expanded-20261009.json",
+      "sha256": "c41f23abea114be8875fa895a8c9af73ea7d88e4ac914e21afca25067ef48fb8",
+      "bytes": 4574
+    },
+    {
+      "path": "media/terminal-ux/file-folding-expanded-20261009.png",
+      "sha256": "894799d3a9ecfd6a8bd780e3eac0dd2f065b985701d5131c4e12a26c9fe9f084",
+      "bytes": 127319
+    },
+    {
+      "path": "media/terminal-ux/file-folding-interaction-20261009.gif",
+      "sha256": "fda6e1dbf6ed5d7d730628bd0e9a23824dc4d932114785c44035e3222ed189ae",
+      "bytes": 986720
+    },
+    {
+      "path": "media/terminal-ux/file-folding-resized-20261009.json",
+      "sha256": "4d956684287807bfc36997bee88b44d031ab951b19e14d2df3f667427026e28d",
+      "bytes": 1392
+    },
+    {
+      "path": "media/terminal-ux/file-folding-resized-20261009.png",
+      "sha256": "569df3b8b5192ed64612886b29657fbbe61b2b0dc2455eae69329a41d24611ae",
+      "bytes": 54975
+    },
+    {
+      "path": "media/terminal-ux/file-folding-scrolled-20261009.json",
+      "sha256": "bcb0c134034316d7f652ca3001828a5188d530e8e5b4c36a5438c87ceb762ad7",
+      "bytes": 4761
+    },
+    {
+      "path": "media/terminal-ux/files.log",
+      "sha256": "d16c05bebceb8300f64110fdc9ca0ca905ed0298c7798c6e8475a353c2395bf9",
+      "bytes": 8201
+    },
+    {
+      "path": "media/terminal-ux/folding-collapsed-20261009.json",
+      "sha256": "720da6debd61d950a392421dca2bed5391e926e4de9c3d1e2ef188120dfb3237",
+      "bytes": 4207
+    },
+    {
+      "path": "media/terminal-ux/folding-collapsed-20261009.png",
+      "sha256": "a99e8cb8b01bf202053cab6159d14da0b57dc0559642c556a1dd608c3b5a7352",
+      "bytes": 104013
+    },
+    {
+      "path": "media/terminal-ux/folding-expanded-20261009.json",
+      "sha256": "d35e9e775f25a49aa81e876818b84d47664360b0d2d0798b3b18591265f60002",
+      "bytes": 3219
+    },
+    {
+      "path": "media/terminal-ux/folding-expanded-20261009.png",
+      "sha256": "7d3d8501956e951e4752b46eaf5d1b1e32ed2ff6c773caf9d5b08da8612d45e8",
+      "bytes": 101625
+    },
+    {
+      "path": "media/terminal-ux/folding-interaction-20261009.gif",
+      "sha256": "117cc9255a8b3a690fb15c5e28021252c69cd5146631407a5b0017a8c93cbdfd",
+      "bytes": 536761
+    },
+    {
+      "path": "media/terminal-ux/folding-narrow-20261009.json",
+      "sha256": "3f6272d03919d913b55a45287b004f4c1122b3288bbd4ae87cfafe0ad4703094",
+      "bytes": 2441
+    },
+    {
+      "path": "media/terminal-ux/folding-narrow-20261009.png",
+      "sha256": "09426280e41bb0fd13a0d3bac51fc522b46cf7270d1e8448ac70c2ba9edfdc67",
+      "bytes": 50834
+    },
+    {
+      "path": "media/terminal-ux/folding-search-20261009.json",
+      "sha256": "b15948d576a6011aa1e7ab2b32e61fc34640eede41415e6b0ba62447596bf980",
+      "bytes": 3475
+    },
+    {
+      "path": "media/terminal-ux/folding-search-20261009.png",
+      "sha256": "e4ae32600e793f3f4e8512f607370fc4826be1540b377dae4d7e1efc4c64bfe3",
+      "bytes": 108578
+    },
+    {
+      "path": "media/terminal-ux/folding-unavailable-20261009.json",
+      "sha256": "08266ffc01b9e4c38e66412b18ea75f2824733b9110b9b6acfe296b365df2dd7",
+      "bytes": 4257
+    },
+    {
+      "path": "media/terminal-ux/folding.log",
+      "sha256": "fc3d6b10ea257c10891fd12aa5b5b9643eb1fefe5285acf25dad792b2ea9bc5e",
+      "bytes": 6035
+    },
+    {
+      "path": "media/terminal-ux/tool.txt",
+      "sha256": "c5de990e3be95f8c77b378c869328a8a3e01a8e8911175a53a8af1444d30b000",
+      "bytes": 316
+    },
+    {
+      "path": "media/terminal-ux/viewer.txt",
+      "sha256": "ac03926010fc0b62d92c84cb75f100580cc079a15b465bb6dce3bb75add0ffc2",
+      "bytes": 228
+    }
+  ]
+}
