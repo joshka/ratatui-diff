@@ -106,3 +106,30 @@ fn source_and_hunk_navigation_open_file_without_losing_context_preferences() {
     assert!(state.context_expanded(&context));
     assert_eq!(state.source_at(state.offset(), Side::Old), Some(position));
 }
+
+#[test]
+fn expanding_all_closed_files_preserves_the_first_header() {
+    let document = document();
+    let mut state = DiffState::new();
+    paint(&document, &mut state, ViewMode::Unified, 60);
+    for fold in state.file_folds().to_vec() {
+        state.set_file_expanded(&fold, false);
+    }
+    paint(&document, &mut state, ViewMode::Unified, 60);
+    let first = state.file_folds()[0];
+    for fold in state.file_folds().to_vec() {
+        state.set_file_expanded(&fold, true);
+    }
+    paint(&document, &mut state, ViewMode::Unified, 60);
+    assert_eq!(state.offset(), 0);
+    assert_eq!(
+        state.hit_test(2, 3),
+        Some(HitTest::FileHeader { fold: first })
+    );
+    assert!(
+        state
+            .file_folds()
+            .iter()
+            .all(|fold| state.file_expanded(fold))
+    );
+}

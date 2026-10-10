@@ -434,15 +434,6 @@ impl DiffState {
             .screen
             .get(self.offset)
             .is_some_and(|screen| self.rows[screen.row].file == fold.file);
-        let header_visible = self
-            .screen
-            .iter()
-            .skip(self.offset)
-            .take(self.height)
-            .any(|screen| {
-                let row = &self.rows[screen.row];
-                row.file_header && row.file == fold.file
-            });
         if !expanded {
             self.pending = self.pending.filter(|target| match target {
                 RevealTarget::Source(position) => position.file != fold.file,
@@ -450,7 +441,7 @@ impl DiffState {
                 RevealTarget::File(_) => true,
             });
         }
-        if current || (expanded && header_visible) {
+        if current {
             self.pending = Some(RevealTarget::File(fold.file));
         }
         self.folds_dirty = true;
