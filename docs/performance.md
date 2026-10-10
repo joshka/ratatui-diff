@@ -221,9 +221,88 @@ After 1,000 frames the additional observed growth is only 48–64 KiB. These sna
 absence of leaks or measure peak transient memory. RSS remaining unchanged after dropping inputs is
 consistent with allocator page retention; exact attribution needs an allocator profile.
 
-## Recommended follow-up units
+## Prepared glyph storage candidate
 
-1. Profile glyph allocations first. Initial layout prepares every retained source grapheme,
+The October 9 baseline above remains unchanged. A follow-up on immutable main
+`2983b0b5f442cbecfe2985ffe4fdcd5231cf8d34` replaces each glyph's owned string with a range into one
+prepared line buffer. Ordinary graphemes index its source prefix; tabs, whitespace markers, control
+escapes, dotted-circle bases, and newline notation append display text. Original source ranges
+remain independent. Completed glyph arrays use exact-size boxed slices, discarding vector capacity
+reserved during preparation. Split context still prepares both sides, including hidden files; this
+change does not defer preparation or change display/source index rebuilding.
+
+Safe temporary instrumentation of the existing 100,000-line retained Unicode fixture accounts for
+private storage structurally. It sums glyph vector capacities times `size_of::<Glyph>()`, text
+capacities, and logical-row vector capacity times `size_of::<Row>()`. The candidate sums boxed slice
+lengths instead of vector capacities. These figures exclude allocator metadata, alignment rounding,
+temporary allocations, display/source indexes, and other state. No allocator profiler was used.
+
+| Attributed retained category | Baseline        | Candidate       |
+| ---------------------------- | --------------- | --------------- |
+| Live glyphs                  | 4,577,827       | 4,577,827       |
+| Bytes per glyph              | 72              | 64              |
+| Glyph backing bytes          | 460,804,608     | 292,980,928     |
+| Display text capacity bytes  | 7,377,834       | 7,377,834       |
+| Nonempty text allocations    | 4,577,827       | 200,002         |
+| Logical-row backing bytes    | 27,262,976      | 31,457,280      |
+
+The attributed categories decrease by 163,629,376 bytes (156.0 MiB). Baseline glyph vector slack
+alone accounts for 131,201,064 bytes (125.1 MiB). These sums establish representation costs; they do
+not explain every RSS page or quantify allocator overhead from the removed small allocations.
+
+Measurements use the same machine, locked dependencies, release settings, terminal buffer, and
+retained fixture as the baseline. Separate optimized baseline/candidate executables run sequentially
+while related builds and terminal captures are paused. Two uncontended Criterion runs per executable
+retain independent baselines; an earlier potentially overlapping baseline run is excluded. Each
+executable also runs three fresh-process memory probes. Short-run mean ranges and outliers limit
+claims about small timing changes.
+
+```sh
+glyph_filter='scenarios/(compare-retained|initial-Split-wrap-true-file-closed-(false|true)|'
+glyph_filter+='context-open-resize-Split-wrap-true|context-open-steady-Split-wrap-true)/100000$'
+cargo bench --bench viewer --locked -- "$glyph_filter" \
+  --warm-up-time 0.1 --measurement-time 0.2 --sample-size 10 \
+  --save-baseline glyph-candidate-1
+RATATUI_DIFF_MEMORY=1 cargo bench --bench viewer --locked
+```
+
+Repeat with a distinct baseline name, and run the memory probe three times. Compare the immutable
+baseline in a separate jj workspace; never change an active owner's revision for measurements.
+
+| Operation, retained 100k split/wrapped | Baseline mean range | Candidate mean range |
+| -------------------------------------- | ------------------- | -------------------- |
+| Source comparison                      | 28.96–31.48 ms      | 27.11–29.46 ms       |
+| Initial layout, file open              | 243.26–254.07 ms    | 176.52–186.79 ms     |
+| Initial layout, file closed            | 244.60–264.58 ms    | 176.15–179.42 ms     |
+| Resize, all context open               | 30.09–30.50 ms      | 21.78–22.36 ms       |
+| Cached frames, all context open        | 109.9–113.4 µs      | 106.0–110.5 µs       |
+
+Source preparation is unchanged; its overlapping ranges provide a comparison control. Resize still
+rebuilds display/source indexes. Its observed decrease does not establish an index optimization; the
+smaller retained representation can affect traversal and allocator behavior. Cached rendering shows
+no large change in these short runs.
+
+| Fresh-process RSS phase   | Baseline (MiB) | Candidate (MiB) |
+| ------------------------- | -------------- | --------------- |
+| Prepared, inputs dropped  | 33.5–34.7      | 33.1–34.5       |
+| Initial file closed       | 648.2–651.3    | 463.4–464.6     |
+| File open, context closed | 648.2–651.3    | 463.4–464.6     |
+| All context open          | 649.3–652.3    | 468.0–469.3     |
+| Search all lines          | 665.9–666.5    | 472.1–474.2     |
+| After 1,000 frames        | 666.0–666.6    | 472.1–474.2     |
+
+Closed-file first-layout RSS decreases by about 28.5% in this fixture. RSS remains above attributed
+live capacities and includes retained allocator pages. Phase deltas, including the smaller observed
+search delta, are not exact private cache sizes. Peak resident memory and allocation lifetimes
+remain unmeasured. Unicode/source, clipping, wrapping, split pairing, folding, search, selection,
+reveal, and replacement contracts remain covered by focused and existing integration tests.
+
+## Baseline follow-up units
+
+These recommendations describe the original measurement-only baseline. The prepared glyph storage
+candidate above implements its first investigation; the remaining units are independent.
+
+1. Profile glyph allocations first. Baseline initial layout prepares every retained source grapheme,
    including hidden files/context; ordinary graphemes own individual `String`s, and split context
    prepares both panes. Test source-backed glyph ranges with owned text only for transformations, or
    deferred glyph preparation for closed regions, as separate changes. Preserve Unicode geometry,
@@ -241,6 +320,6 @@ consistent with allocator page retention; exact attribution needs an allocator p
    preparation and initial-layout boundaries expose costs separately; cached scrolling should remain
    unaffected. Evaluate candidate code only from an immutable coordinator snapshot.
 
-No core optimization or CI timing gate is included in this change. Private allocator attribution,
-peak RSS, many-file/many-fold scaling, terminal output latency, and candidate alignment performance
-remain unmeasured.
+The original baseline includes no core optimization or CI timing gate. Private allocator
+attribution, peak RSS, many-file/many-fold scaling, terminal output latency, and candidate alignment
+performance remain unmeasured.
