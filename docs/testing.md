@@ -22,24 +22,31 @@ are ignored and belong in release assets, never repository history.
 
 Build this checkout's viewer with `cargo build --example viewer --locked`, then run
 `python3 scripts/terminal-ux.py`. The runner resolves the executable through Cargo metadata and
-replays the `examples/terminal-ux-*.tape` cases. Set `BETAMAX` to an explicit executable path;
-optionally set `BETAMAX_VERSION` to require its reported version. A source-built executable may
-report the preceding release version, so record its immutable source revision and build command
-alongside preliminary evidence. Set `BETAMAX_REVISION` to retain that revision in `tool.txt`. Use
-`--case files` for the file-folding scenario alone; repeat `--case` to select several cases. Exact
-Unicode/source checkpoint checks run when their resize, Unicode, and multi-file tapes are all
-selected. Every selected tape still runs its own assertions and retains failure diagnostics.
+replays the `examples/terminal-ux-*.tape` cases. Set `BETAMAX` to an explicit executable path; set
+`BETAMAX_VERSION` to require its reported version. `tool.txt` retains the resolved executable,
+version, executable SHA-256, and optional `BETAMAX_REVISION` source identity. Use `--case files` for
+the file-folding scenario alone; repeat `--case` to select several cases. Exact Unicode/source
+checkpoint checks run when their resize, Unicode, and multi-file tapes are all selected. Every
+selected tape still runs its own assertions and retains failure diagnostics.
 
-Provisional validation uses Betamax revision
-[`9a7a34597ae08f428b8363269571325e87d0984f`](https://github.com/joshka/betamax/commit/9a7a34597ae08f428b8363269571325e87d0984f),
-built with locked dependencies and Zig 0.15.2. That source reports version 0.1.21 while including
-unreleased commands; a version check alone does not establish feature availability.
+For integrated acceptance against a frozen executable, pass `--viewer /absolute/path/to/viewer` and
+`--viewer-revision COMMIT`; `viewer.txt` retains its path, revision, and executable SHA-256. The
+ordinary default still resolves this checkout’s Cargo target.
 
-These cases require mouse input, live resize, and settled assertions from Betamax's terminal input
-work. The published 0.1.21 release lacks those commands. Keep the published tool pin unchanged until
-a release contains them; these cases are not yet a blocking CI job. Once that release exists, add a
-terminal acceptance job that builds the example, installs the exact released tool, runs the runner,
-and uploads `media/terminal-ux/` with `if: always()` so failure diagnostics survive.
+[Betamax 0.1.22](https://github.com/joshka/betamax/releases/tag/betamax-v0.1.22) is the first
+published release with mouse input, live resize, and settled assertions. Its tag resolves to
+[`5650cb1ebcf7251b34ee9e9f70bfe7bb3f3242b2`](https://github.com/joshka/betamax/commit/5650cb1ebcf7251b34ee9e9f70bfe7bb3f3242b2).
+CI downloads the exact Linux release asset and verifies its SHA-256 before running the scenarios.
+The `terminal-acceptance` job is blocking through the `required` aggregate; its artifact upload uses
+`if: always()` to retain PNG/JSON checkpoints, logs, tool identity, and failure diagnostics.
+
+For local release validation, download the matching 0.1.22 platform asset and verify the digest
+reported by the release API. Set `BETAMAX` to the extracted executable, `BETAMAX_VERSION=0.1.22`,
+and `BETAMAX_REVISION=5650cb1ebcf7251b34ee9e9f70bfe7bb3f3242b2`. The macOS arm64 asset digest is
+`0fe9e07cf963a668725508fd5afa62120245950fded75718898546c4de22f98e`; the Linux x86-64 asset digest is
+`497c0bbf6da724e90be49e48ade317d99567e4b03e4e86f03c0dac691ec6358f`. These released artifacts replace
+preliminary source-built evidence from revision `9a7a34597ae08f428b8363269571325e87d0984f`, which
+reported 0.1.21 while using unreleased commands.
 
 The cases reuse Betamax's consumer scenarios: real mouse selection checks old/new source previews;
 gutter, header, and blank split-side clicks cannot select source. Focused cell/style assertions
@@ -49,6 +56,10 @@ fixture, including combining marks, wide cells, ZWJ sequences, and source newlin
 search and navigation cover nine matches and viewport clamping. `c` opens the example's text
 preview; these checks make no OS clipboard claim.
 
+The resize tape includes a paced, captioned drag/resize/source-preview GIF. It keeps the mouse
+button held across a live grid resize, then verifies that the completed selection retains its exact
+source preview as terminal dimensions change.
+
 The context fixture adds keyboard and mouse fold expansion, collapse, search reveal, and live resize
 in split/wrapped/monochrome mode. Its paced GIF explains the interaction; PNG/JSON checkpoints and
 focused fold cells/styles check the rendered state independently of recording readability.
@@ -57,6 +68,13 @@ The files fixture adds header clicks, `Enter` for the current file, and `A`/`Z` 
 exercises text, binary, and mode-only headers alongside independent context controls. Public
 file-folding integration tests check source extraction, explicit reveal, navigation, geometry
 changes, and document replacement without requiring terminal input.
+
+The statistics case checks supplied text totals across file folding, split/wrapped mode, and tiny
+viewports, including separate binary and metadata counts. It checks the summary with one widget row,
+its absence when the host allocates zero rows, and its restoration after resize. The alignment case
+checks paired changed lines after an unpaired annotation, exact wide-cell continuations, and
+original old/new source previews after mouse selection. It also retains the selected source through
+narrow wrapped resize.
 
 Logs, checkpoint PNG/JSON, tool identity, and Betamax failure diagnostics live under
 `media/terminal-ux/`. The runner returns nonzero if any tape or exact-source check fails and
