@@ -10,12 +10,13 @@ produce no hunks. A context line stores its text once with both original source 
 comparison context counts discard omitted text, and parsed patches supply only their advertised hunk
 text. Neither input form promises retrieval of missing source.
 
-Comparison pairs deletion/insertion runs in source order and computes word ranges once. Automatic
-ranges join changed words separated only by whitespace, leaving outer unchanged whitespace and
-unchanged words outside the highlight. Explicit caller ranges remain authoritative. Runs over 256
-lines, pairs over 8 KiB, or pairs over 2,048 whitespace-delimited words retain whole-line styling.
-These bounds protect interactive preparation from fine-grained adversarial input. They do not bound
-whole-document comparison time.
+Comparison and split layout share bounded, monotonic similarity anchors for deletion/insertion runs.
+Unanchored gaps and oversized runs pair in source order; see [split alignment](split-alignment.md).
+Comparison computes word ranges once. Automatic ranges join changed words separated only by
+whitespace, leaving outer unchanged whitespace and unchanged words outside the highlight. Explicit
+caller ranges remain authoritative. Runs over 256 lines, pairs over 8 KiB, or pairs over 2,048
+whitespace-delimited words retain whole-line styling. These bounds protect interactive preparation
+from fine-grained adversarial input. They do not bound whole-document comparison time.
 
 `&Diff` implements `StatefulWidget` with a separate `DiffState`. This is the chosen rendering
 contract; a mutable-widget prototype is not planned. Hosts can recreate the widget with current

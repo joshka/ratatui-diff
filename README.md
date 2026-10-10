@@ -58,8 +58,9 @@ differences; control characters are displayed as visible text.
 ## Configure appearance
 
 The defaults are unified view, visible line numbers and word highlights, no wrapping or
-whitespace markers, four-cell tab stops, and the dark theme. Split replacements pair lines in
-source order and pad the shorter side. Each [`DiffTheme`](https://docs.rs/ratatui-diff/latest/ratatui_diff/theme/struct.DiffTheme.html) style can be customized independently.
+whitespace markers, four-cell tab stops, and the dark theme. Split replacements use bounded
+similarity anchors and pad unmatched lines; unanchored gaps and large runs pair in source order.
+Each [`DiffTheme`](https://docs.rs/ratatui-diff/latest/ratatui_diff/theme/struct.DiffTheme.html) style can be customized independently.
 
 ```rust
 use ratatui_diff::{Diff, DiffDocument, DiffTheme, ViewMode};
