@@ -570,13 +570,15 @@ impl DiffState {
     /// Set anchor/focus from host keyboard or pointer input.
     ///
     /// Rejects invalid source boundaries, cross-file/side ranges, and omitted patch context.
-    /// The selection belongs to `document`; rendering another document clears it.
+    /// Invalid input leaves the current selection unchanged. Validation borrows source text;
+    /// copying occurs only when extracting it. The selection belongs to `document`; rendering
+    /// another document clears it.
     pub fn set_selection(
         &mut self,
         document: &DiffDocument,
         selection: crate::SourceSelection,
     ) -> bool {
-        if selection.text(document).is_none() {
+        if !selection.is_valid(document) {
             return false;
         }
         self.selection = Some(selection);

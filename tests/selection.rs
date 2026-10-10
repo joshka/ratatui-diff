@@ -385,3 +385,62 @@ fn explicit_focus_reveal_uses_graphemes_and_next_frame_geometry() {
         assert_eq!(state.selection(), Some(blank));
     }
 }
+
+#[test]
+fn validation_matches_extraction_and_rejection_is_atomic() {
+    use ratatui_diff::DiffState;
+
+    let documents = [
+        DiffDocument::from_text("old\r\n", "界e\u{301}\r\n\nlast"),
+        DiffDocument::parse("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n@@ -3 +3 @@\n-c\n+d\n")
+            .unwrap(),
+    ];
+    for document in documents {
+        let original = SourceSelection {
+            anchor: point(Side::New, 1, 0),
+            focus: point(Side::New, 1, 0),
+        };
+        let mut state = DiffState::new();
+        assert!(state.set_selection(&document, original));
+        for side in [Side::Old, Side::New] {
+            for line in 0..=4 {
+                for byte in 0..=12 {
+                    let selection = SourceSelection {
+                        anchor: original.anchor,
+                        focus: point(side, line, byte),
+                    };
+                    let text = selection.text(&document);
+                    let previous = state.selection();
+                    assert_eq!(state.set_selection(&document, selection), text.is_some());
+                    if let Some(text) = text {
+                        assert_eq!(state.selected_text(&document), Some(text));
+                        let reversed = SourceSelection {
+                            anchor: selection.focus,
+                            focus: selection.anchor,
+                        };
+                        assert!(state.set_selection(&document, reversed));
+                    } else {
+                        assert_eq!(state.selection(), previous);
+                    }
+                }
+            }
+        }
+        let other_document = DiffDocument::from_text("", "replacement\n");
+        let invalid = SourceSelection {
+            focus: SourceBoundary {
+                position: SourcePosition {
+                    file: 1,
+                    ..original.focus.position
+                },
+                ..original.focus
+            },
+            ..original
+        };
+        let previous = state.selection();
+        let previous_text = state.selected_text(&document);
+        assert!(!state.set_selection(&other_document, invalid));
+        assert_eq!(state.selection(), previous);
+        assert_eq!(state.selected_text(&document), previous_text);
+        assert_eq!(state.selected_text(&other_document), None);
+    }
+}
