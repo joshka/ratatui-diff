@@ -22,10 +22,18 @@ mod fixtures;
 fn main() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     let mut arguments: Vec<_> = arguments.iter().map(String::as_str).collect();
+    #[cfg(feature = "syntax")]
+    if arguments.as_slice() == ["--syntax-licenses"] {
+        print!("{}", ratatui_diff::SyntaxHighlighter::acknowledgements());
+        return Ok(());
+    }
     if arguments.as_slice() == ["--help"] {
         println!(
             "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nFixtures: showcase (default), context, files, alignment, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
         );
+        #[cfg(feature = "syntax")]
+        println!("Syntax: --syntax THEME [--syntax-contrast], --syntax-licenses; h toggles prepared syntax.
+Use --fixture syntax for complete Rust sources; other fixtures use best-effort retained input.");
         return Ok(());
     }
     let mut fixture = "showcase";
@@ -39,8 +47,37 @@ fn main() -> Result<(), Box<dyn Error>> {
         arguments.drain(index..=index + 1);
     }
     let document = fixtures::load(fixture)?;
+    #[cfg(feature = "syntax")]
+    let syntax_contrast = if let Some(index) = arguments
+        .iter()
+        .position(|argument| *argument == "--syntax-contrast")
+    {
+        arguments.remove(index);
+        true
+    } else {
+        false
+    };
+    #[cfg(feature = "syntax")]
+    let syntax = if let Some(index) = arguments
+        .iter()
+        .position(|argument| *argument == "--syntax")
+    {
+        let theme = *arguments
+            .get(index + 1)
+            .ok_or("--syntax requires a bundled theme name")?;
+        arguments.drain(index..=index + 1);
+        Some(prepare_syntax(&document, fixture, theme, syntax_contrast)?)
+    } else {
+        None
+    };
     if let ["--capture", variant] = arguments.as_slice() {
         let widget = capture_widget(&document, variant)?;
+        #[cfg(feature = "syntax")]
+        let widget = if let Some(styles) = &syntax {
+            widget.syntax_styles(styles)?
+        } else {
+            widget
+        };
         let mut terminal = ratatui::init();
         let result = capture(&mut terminal, &widget, &document, variant);
         ratatui::restore();
@@ -48,6 +85,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if let ["--measure", variant, columns] = arguments.as_slice() {
         let widget = capture_widget(&document, variant)?;
+        #[cfg(feature = "syntax")]
+        let widget = if let Some(styles) = &syntax {
+            widget.syntax_styles(styles)?
+        } else {
+            widget
+        };
         let area = Rect::new(0, 0, columns.parse()?, 1);
         let mut buffer = Buffer::empty(area);
         let mut state = DiffState::new();
@@ -64,15 +107,63 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .into(),
             ),
         };
+    #[cfg(feature = "syntax")]
+    if syntax_contrast && color_theme != DiffTheme::aardvark_ink() {
+        return Err("--syntax-contrast requires --aardvark-ink for interactive viewing".into());
+    }
     let mut terminal = ratatui::init();
     let result = (|| {
         execute!(std::io::stdout(), EnableMouseCapture)?;
-        run(&mut terminal, color_theme, document)
+        run(
+            &mut terminal,
+            color_theme,
+            document,
+            #[cfg(feature = "syntax")]
+            syntax,
+        )
     })();
     let mouse_restore = execute!(std::io::stdout(), DisableMouseCapture);
     ratatui::restore();
     mouse_restore?;
     result
+}
+
+/// Highlight source once; the feature-enabled host never tokenizes or maps spans itself.
+#[cfg(feature = "syntax")]
+fn prepare_syntax(
+    document: &DiffDocument,
+    fixture: &str,
+    theme: &str,
+    contrast: bool,
+) -> Result<ratatui_diff::SyntaxStyles, Box<dyn Error>> {
+    use ratatui_diff::{FileSyntax, SyntaxHighlighter, SyntaxSource};
+    let highlighter = SyntaxHighlighter::bundled(theme)?;
+    let highlighter = if contrast {
+        highlighter.contrast_with(DiffTheme::aardvark_ink())?
+    } else {
+        highlighter
+    };
+    let files: Vec<_> = document
+        .files()
+        .iter()
+        .enumerate()
+        .filter(|(_, file)| !file.hunks.is_empty())
+        .map(|(file, _)| FileSyntax {
+            file,
+            language: if fixture == "showcase" || fixture == "syntax" {
+                "rs"
+            } else {
+                "txt"
+            },
+            source: if fixture == "syntax" {
+                let (old, new) = fixtures::syntax_sources();
+                SyntaxSource::Full { old, new }
+            } else {
+                SyntaxSource::Retained
+            },
+        })
+        .collect();
+    Ok(highlighter.prepare(document, &files)?)
 }
 
 /// Select the same presentation options used by the visual guide.
@@ -163,8 +254,11 @@ fn run(
     terminal: &mut DefaultTerminal,
     color_theme: DiffTheme,
     document: DiffDocument,
+    #[cfg(feature = "syntax")] syntax: Option<ratatui_diff::SyntaxStyles>,
 ) -> Result<(), Box<dyn Error>> {
     let mut state = DiffState::new();
+    #[cfg(feature = "syntax")]
+    let mut syntax_enabled = syntax.is_some();
     let mut mode = ViewMode::Unified;
     let mut wrap = false;
     let mut whitespace = false;
@@ -219,6 +313,10 @@ fn run(
                     }
                 );
             }
+            #[cfg(feature = "syntax")]
+            if syntax.is_some() && area.width >= 70 {
+                title.push_str(if syntax_enabled && theme != DiffTheme::monochrome() { " · syntax on (h)" } else { " · syntax off (h)" });
+            }
             frame.render_widget(Paragraph::new(title), title_area);
             body_area = body;
             let widget = Diff::new(&document)
@@ -230,6 +328,10 @@ fn run(
                 .line_numbers(numbers)
                 .word_highlights(words)
                 .theme(theme);
+            #[cfg(feature = "syntax")]
+            let widget = if syntax_enabled && theme != DiffTheme::monochrome() {
+                syntax.as_ref().map_or(widget, |styles| widget.syntax_styles(styles).expect("prepared for this document"))
+            } else { widget };
             frame.render_stateful_widget(&widget, body, &mut state);
             focused_file = focused_file.filter(|&fold| (body.y..body.bottom()).any(|y| {
                 matches!(state.hit_test(body.x,y),Some(HitTest::FileHeader{fold:visible}) if visible == fold)
@@ -457,6 +559,8 @@ fn run(
                 KeyCode::Char('t') => whitespace = !whitespace,
                 KeyCode::Char('n') => numbers = !numbers,
                 KeyCode::Char('i') => words = !words,
+                #[cfg(feature = "syntax")]
+                KeyCode::Char('h') => syntax_enabled = !syntax_enabled,
                 KeyCode::Char('d') => {
                     show_stats = !show_stats;
                     pointer = None;

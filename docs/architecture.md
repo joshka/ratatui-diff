@@ -112,3 +112,12 @@ indexes. Mode/width changes retain results and reveal the selected occurrence in
 Search styles patch over line/word styles after synthetic cue dimming; defaults add underline or
 reverse video without replacing source foregrounds or word backgrounds. Selection overlays search
 styles; advanced search remains deferred.
+
+## Optional syntax preparation
+
+The `syntax` feature keeps grammar and theme engines behind `SyntaxHighlighter`. Hosts provide
+language choices and complete snapshots or request best-effort retained input. Preparation validates
+source correspondence, parses each side independently, and returns owned, document-bound styles. The
+widget consumes original byte ranges while painting; syntax does not participate in geometry,
+navigation, selection, extraction, or host I/O. See [syntax highlighting](syntax-styling.md) for
+composition, limits, contrast adaptation, and bundled asset obligations.

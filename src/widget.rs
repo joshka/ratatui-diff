@@ -1154,6 +1154,8 @@ impl DiffState {
 /// includes rendering and navigation examples.
 #[derive(Debug, Clone, Copy)]
 pub struct Diff<'a> {
+    #[cfg(feature = "syntax")]
+    syntax: Option<&'a crate::SyntaxStyles>,
     selection_style: Style,
     document: &'a DiffDocument,
     mode: ViewMode,
@@ -1176,6 +1178,8 @@ impl<'a> Diff<'a> {
     pub fn new(document: &'a DiffDocument) -> Self {
         Self {
             document,
+            #[cfg(feature = "syntax")]
+            syntax: None,
             selection_style: Style::default().add_modifier(Modifier::REVERSED),
             mode: ViewMode::Unified,
             theme: DiffTheme::default(),
@@ -1187,6 +1191,25 @@ impl<'a> Diff<'a> {
             context: None,
             show_stats: false,
         }
+    }
+
+    /// Attach prepared syntax colors without changing layout or interaction state.
+    ///
+    /// Available with feature `syntax`. Prepare with [`crate::SyntaxHighlighter`] outside drawing;
+    /// attachment only checks document identity and returns
+    /// [`crate::SyntaxError::DocumentMismatch`] for results prepared against another document.
+    /// Clones accept the same results. Syntax adds foreground/bold/italic before word,
+    /// whitespace, search, and selection overlays. Unified context uses the new side without
+    /// old-side fallback. Omit this option to disable syntax, including when a host chooses
+    /// monochrome presentation.
+    #[cfg(feature = "syntax")]
+    pub fn syntax_styles(
+        mut self,
+        styles: &'a crate::SyntaxStyles,
+    ) -> Result<Self, crate::SyntaxError> {
+        styles.validate_document(self.document)?;
+        self.syntax = Some(styles);
+        Ok(self)
     }
 
     /// Fold retained unchanged runs, keeping this many lines beside each change.
@@ -2124,6 +2147,24 @@ impl Diff<'_> {
                 line,
             })
         });
+        #[cfg(feature = "syntax")]
+        let syntax = source_line.map_or(&[][..], |line| {
+            self.syntax.map_or(&[][..], |styles| {
+                styles.line(SourcePosition {
+                    file: row.file,
+                    side: source_side,
+                    line,
+                })
+            })
+        });
+        #[cfg(feature = "syntax")]
+        let mut syntax_index = content
+            .glyphs
+            .get(first)
+            .and_then(|glyph| glyph.bytes.as_ref())
+            .map_or(0, |bytes| {
+                syntax.partition_point(|span| span.bytes.end <= bytes.start)
+            });
         // Unified context can be found through either selected side.
         let candidates = if candidates.is_empty()
             && self.mode == ViewMode::Unified
@@ -2145,6 +2186,19 @@ impl Diff<'_> {
             if column + glyph.width > width {
                 break;
             }
+            #[cfg(feature = "syntax")]
+            let style = glyph.bytes.as_ref().map_or(style, |bytes| {
+                while syntax
+                    .get(syntax_index)
+                    .is_some_and(|span| span.bytes.end <= bytes.start)
+                {
+                    syntax_index += 1;
+                }
+                syntax
+                    .get(syntax_index)
+                    .filter(|span| span.bytes.start < bytes.end)
+                    .map_or(style, |span| style.patch(span.style))
+            });
             let emphasized = if content.kind == LineKind::Insert {
                 self.theme.insert_word
             } else {

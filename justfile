@@ -12,8 +12,9 @@ fmt-md:
 fmt-md-check:
     rumdl check .
 test:
-    cargo test --all-targets --locked
-    cargo test --doc --locked
+    cargo test --all-targets --all-features --locked
+    cargo test --doc --all-features --locked
+    cargo test --no-default-features --lib --tests --locked
 clippy:
     cargo clippy --all-targets --all-features --locked -- -D warnings
 docs:
@@ -22,7 +23,7 @@ docs:
 docs-rs:
     RUSTDOCFLAGS="-D warnings --cfg docsrs" cargo +nightly doc --no-deps --all-features --locked
 msrv:
-    cargo +1.98.0 test --all-targets --locked
+    cargo +1.98.0 test --all-targets --all-features --locked
 package:
     cargo package --locked
 bench:
