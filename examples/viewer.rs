@@ -84,6 +84,7 @@ fn capture_widget<'a>(
     let split = widget.mode(ViewMode::Split);
     Ok(match variant {
         "files-before" | "files-expanded" | "files-collapsed" => widget.context_lines(Some(3)),
+        "files-collapsed-stats" => widget.context_lines(Some(3)).show_stats(true),
         "files-expanded-split" => split.context_lines(Some(3)).wrap(true),
         "files-collapsed-split" => split.context_lines(Some(3)),
         "files-collapsed-mono" => split.context_lines(Some(3)).theme(DiffTheme::monochrome()),
@@ -169,6 +170,7 @@ fn run(
     let mut whitespace = false;
     let mut numbers = true;
     let mut words = true;
+    let mut show_stats = false;
     let mut theme = color_theme;
     let mut pointer = None;
     let mut copy_preview = None;
@@ -221,6 +223,7 @@ fn run(
             body_area = body;
             let widget = Diff::new(&document)
                 .context_lines(Some(3))
+                .show_stats(show_stats)
                 .mode(mode)
                 .wrap(wrap)
                 .whitespace(whitespace)
@@ -454,6 +457,10 @@ fn run(
                 KeyCode::Char('t') => whitespace = !whitespace,
                 KeyCode::Char('n') => numbers = !numbers,
                 KeyCode::Char('i') => words = !words,
+                KeyCode::Char('d') => {
+                    show_stats = !show_stats;
+                    pointer = None;
+                }
                 KeyCode::Char('m') => {
                     theme = if theme == color_theme {
                         DiffTheme::monochrome()
@@ -598,7 +605,7 @@ fn interaction_hint(editing: bool, selecting: bool, searching: bool, width: u16)
     } else if width < 45 {
         "Tab file · Enter toggle · A/Z all"
     } else {
-        "Tab file · Enter toggle · A/Z files · e/z context · / search · q quit"
+        "Tab file · Enter toggle · A/Z all · d totals · e/z context · / find · q quit"
     }
 }
 

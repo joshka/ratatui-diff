@@ -3,7 +3,7 @@ use ratatui_core::buffer::Buffer;
 use ratatui_core::layout::Rect;
 use ratatui_core::style::{Color, Modifier, Style};
 use ratatui_core::widgets::StatefulWidget;
-use ratatui_diff::{Diff, DiffDocument, DiffState, DiffTheme, ViewMode};
+use ratatui_diff::{Diff, DiffDocument, DiffState, DiffTheme, HitTest, ViewMode};
 
 #[test]
 fn aardvark_ink_preserves_readable_roles_in_both_layouts() {
@@ -63,9 +63,15 @@ fn aardvark_ink_preserves_readable_roles_in_both_layouts() {
                     }
                 }
 
-                // Disabling word emphasis must leave only the whole-line change colors.
+                // Disabling word emphasis retains source-row colors and independent header counts.
                 (&diff.word_highlights(false)).render(area, &mut buffer, &mut state);
-                for cell in &buffer.content {
+                for (index, cell) in buffer.content.iter().enumerate() {
+                    let x = area.x + (index % usize::from(area.width)) as u16;
+                    let y = area.y + (index / usize::from(area.width)) as u16;
+                    if matches!(state.hit_test(x, y), Some(HitTest::FileHeader { .. })) {
+                        assert_eq!(Some(cell.bg), theme.header.bg);
+                        continue;
+                    }
                     if Some(cell.fg) == theme.insert.fg {
                         assert_eq!(Some(cell.bg), theme.insert.bg);
                         assert!(!cell.modifier.contains(Modifier::BOLD));
