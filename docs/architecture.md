@@ -4,6 +4,12 @@ The model owns validated files, hunks, numbered lines, line endings, and highlig
 Documents are immutable after construction. Comparison and patch parsing adapt external libraries
 into this model; consumers may provide structured input directly.
 
+`from_text` retains three context lines around edits. `compare(old, new, usize::MAX)` retains all
+source lines for changed inputs, using the existing hunk and line model; identical inputs still
+produce no hunks. A context line stores its text once with both original source numbers. Smaller
+comparison context counts discard omitted text, and parsed patches supply only their advertised hunk
+text. Neither input form promises retrieval of missing source.
+
 Comparison pairs deletion/insertion runs in source order and computes word ranges once. Automatic
 ranges join changed words separated only by whitespace, leaving outer unchanged whitespace and
 unchanged words outside the highlight. Explicit caller ranges remain authoritative. Runs over 256
@@ -30,6 +36,29 @@ whole document.
 A displayed line is a screen row, including headers and wrapped continuations. Source lines are
 numbered independently. Mode/width changes preserve the nearest available source anchor; document
 replacement resets the viewport. Missing patch context cannot be recovered by rendering.
+
+Context folding changes presentation of retained context runs within a hunk. It never crosses an
+unavailable gap or changes source text, line numbers, or hunk ranges. The presentation option
+selects how many context lines remain beside changes: `Diff::context_lines(None)` disables folding
+by default, while `Some(3)` keeps the nearest three lines at leading and trailing changes and three
+at each end of an internal run. Only the remaining interior becomes a fold. The widget option
+changes visible context; the `DiffDocument::compare` context argument determines which source is
+retained.
+
+State owns expansion independently for each fold. File/hunk indexes and original old/new line ranges
+identify folds across width and mode changes. Fold handles also retain document identity and context
+radius; changing either clears expansion and rejects stale handles. `context_folds` includes
+expanded candidates so hosts can offer collapse controls. A collapsed fold is a synthetic
+`HitTest::Fold` with no source byte range or selection boundary. Known leading and inter-hunk gaps
+use an unavailable context cue with an ordinary header hit; no trailing gap is inferred from an
+unknown source extent. File and hunk navigation retain their original header targets.
+
+Search indexes and selection extraction include folded retained text. `scroll_to_source` accepts a
+retained line inside a collapsed fold, then expands and scrolls to it on the next render. Requested
+search or selection reveal also expands the containing fold before resolving its source position in
+the new layout. Setting a selection alone leaves folds collapsed. Extraction across unavailable
+source gaps continues to fail rather than inserting display summaries or guessed text. Hosts own
+filesystem and repository access if they need to construct a replacement document with more source.
 
 Split content uses equal source widths and one separator cell. At even widget widths, the spare
 rightmost cell is padding painted with the right row's style. It adds no source column, so wrapping

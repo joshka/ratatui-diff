@@ -6,6 +6,7 @@ use ratatui_diff::{DiffDocument, DiffFile};
 pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
     match name {
         "showcase" => showcase(),
+        "context" => context(),
         "unicode" => unicode(),
         "unicode-text" => unicode_text(),
         "whitespace" => whitespace(),
@@ -15,6 +16,19 @@ pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
         )
         .into()),
     }
+}
+
+fn context() -> Result<DiffDocument, Box<dyn Error>> {
+    let old: String = (1..=40)
+        .map(|line| format!("rule {line:02}: retain source context\n"))
+        .collect();
+    let new = old
+        .replace("rule 06: retain", "rule 06: revised")
+        .replace("rule 35: retain", "rule 35: revised");
+    Ok(DiffDocument::new(vec![
+        compared_file("src/retained.txt", &old, &new, usize::MAX),
+        compared_file("src/patch.txt", &old, &new, 3),
+    ])?)
 }
 
 fn compared_file(path: &str, old: &str, new: &str, context: usize) -> DiffFile {

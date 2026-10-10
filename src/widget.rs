@@ -3,6 +3,7 @@
 //! [`Diff`] borrows immutable content; [`DiffState`] owns its cached geometry and offsets.
 //! Preparation may traverse the document. Drawing uses the indexed visible rows.
 
+use std::collections::HashSet;
 use std::ops::Range;
 
 use ratatui_core::buffer::Buffer;
@@ -60,9 +61,47 @@ pub struct SourceRange {
     pub bytes: Range<usize>,
 }
 
+/// A retained context range that can be expanded without fetching source.
+///
+/// Ranges are one-based and end-exclusive. Handles belong to the document and context radius
+/// that produced them; state rejects stale handles. Both ranges contain the same number of lines.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ContextFold {
+    /// Zero-based file index.
+    pub file: usize,
+    /// Zero-based hunk index.
+    pub hunk: usize,
+    /// Hidden original source lines.
+    pub old: Range<usize>,
+    /// Hidden modified source lines.
+    pub new: Range<usize>,
+    document: u64,
+    radius: usize,
+}
+
+impl ContextFold {
+    /// Exact number of retained unchanged lines represented by this fold.
+    pub fn line_count(&self) -> usize {
+        self.old.len()
+    }
+
+    fn contains(&self, position: SourcePosition) -> bool {
+        self.file == position.file
+            && match position.side {
+                Side::Old => self.old.contains(&position.line),
+                Side::New => self.new.contains(&position.line),
+            }
+    }
+}
+
 /// The semantic region occupying a cell in the last rendered diff viewport.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HitTest {
+    /// Collapsed retained context. This is an expansion control, without source bytes.
+    Fold {
+        /// Stable source ranges represented by the summary.
+        fold: ContextFold,
+    },
     /// Source text, with both sides available for unified context.
     Source {
         /// Original source range, when available.
@@ -77,7 +116,8 @@ pub enum HitTest {
         /// Modified source line, when available.
         new: Option<SourcePosition>,
     },
-    /// A file, metadata, or hunk header.
+    /// A file, metadata, hunk header, or unavailable-context cue.
+    /// Unavailable context has no expansion control or source coordinates.
     Header {
         /// Zero-based file index.
         file: usize,
@@ -140,6 +180,9 @@ struct Row {
     left: Content,
     right: Option<Content>,
     header: bool,
+    fold: Option<usize>,
+    hidden: Option<usize>,
+    gap: bool,
 }
 
 /// One displayed continuation of a logical row.
@@ -170,6 +213,7 @@ struct LayoutKey {
     wrap: bool,
     whitespace: bool,
     tab: usize,
+    context: Option<usize>,
 }
 
 /// Viewport state and prepared layout cache.
@@ -239,9 +283,95 @@ pub struct DiffState {
     max_width: usize,
     content_width: usize,
     search: Search,
+    folds: Vec<ContextFold>,
+    expanded: HashSet<ContextFold>,
+    folds_dirty: bool,
+    pending_source: Option<SourcePosition>,
 }
 
 impl DiffState {
+    /// All retained-context fold candidates from the last render, including expanded ones.
+    pub fn context_folds(&self) -> &[ContextFold] {
+        &self.folds
+    }
+
+    /// Whether a current fold is expanded. Unknown or stale handles return false.
+    pub fn context_expanded(&self, fold: &ContextFold) -> bool {
+        self.expanded.contains(fold) && self.current_fold(fold)
+    }
+
+    /// Expand or collapse retained context on the next render.
+    ///
+    /// Returns false for unknown or stale handles. An unchanged valid request returns true.
+    /// Changing expansion invalidates hit-testing until redraw. A visible expanded summary is
+    /// replaced at the viewport by its first revealed line; off-screen changes preserve the anchor.
+    /// Manual collapse does not reveal an already active search result again.
+    pub fn set_context_expanded(&mut self, fold: &ContextFold, expanded: bool) -> bool {
+        if !self.current_fold(fold) {
+            return false;
+        }
+        if self.expanded.contains(fold) != expanded {
+            if expanded {
+                self.expanded.insert(fold.clone());
+                // If the control is visible, replace it with the first revealed source line.
+                // Off-screen programmatic expansion keeps the current viewport anchor.
+                let visible =
+                    self.screen
+                        .iter()
+                        .skip(self.offset)
+                        .take(self.height)
+                        .any(|screen| {
+                            self.rows[screen.row]
+                                .fold
+                                .is_some_and(|index| self.folds[index] == *fold)
+                        });
+                if visible {
+                    self.pending_source = Some(SourcePosition {
+                        file: fold.file,
+                        side: Side::Old,
+                        line: fold.old.start,
+                    });
+                }
+            } else {
+                self.expanded.remove(fold);
+            }
+            self.folds_dirty = true;
+            self.rendered = None;
+            self.search.reveal = false;
+        }
+        true
+    }
+
+    fn current_fold(&self, fold: &ContextFold) -> bool {
+        let index = self.folds.partition_point(|candidate| {
+            (candidate.file, candidate.old.start) < (fold.file, fold.old.start)
+        });
+        self.folds.get(index) == Some(fold)
+    }
+
+    fn expand_source(&mut self, position: SourcePosition) -> bool {
+        let index = self.folds.partition_point(|fold| {
+            let range = match position.side {
+                Side::Old => &fold.old,
+                Side::New => &fold.new,
+            };
+            fold.file < position.file || (fold.file == position.file && range.end <= position.line)
+        });
+        let Some(fold) = self
+            .folds
+            .get(index)
+            .filter(|fold| fold.contains(position))
+            .cloned()
+        else {
+            return false;
+        };
+        if self.context_expanded(&fold) {
+            return false;
+        }
+        self.set_context_expanded(&fold, true);
+        true
+    }
+
     /// Inspect the current source selection. It survives layout changes, but not document
     /// replacement.
     pub fn selection(&self) -> Option<crate::SourceSelection> {
@@ -536,6 +666,11 @@ impl DiffState {
             return Some(HitTest::Padding);
         };
         let row = &self.rows[screen.row];
+        if let Some(fold) = row.fold {
+            return Some(HitTest::Fold {
+                fold: self.folds[fold].clone(),
+            });
+        }
         if row.header {
             return Some(HitTest::Header { file: row.file });
         }
@@ -728,7 +863,12 @@ impl DiffState {
     /// Returns `true` when found, even if final-viewport clamping prevents placing it at the top.
     /// Returns `false` without moving when the file or line is absent, the patch omits the line,
     /// or no layout has been rendered. Leaves the horizontal offset unchanged.
+    /// Retained lines inside a collapsed fold expand and scroll on the next render.
     pub fn scroll_to_source(&mut self, position: SourcePosition) -> bool {
+        if self.expand_source(position) {
+            self.pending_source = Some(position);
+            return true;
+        }
         let index = match position.side {
             Side::Old => &self.old_sources,
             Side::New => &self.new_sources,
@@ -736,6 +876,9 @@ impl DiffState {
         if let Ok(n) =
             index.binary_search_by_key(&(position.file, position.line), |&(f, l, _)| (f, l))
         {
+            if self.folds_dirty {
+                self.pending_source = Some(position);
+            }
             self.offset = index[n].2;
             self.clamp();
             true
@@ -790,6 +933,7 @@ pub struct Diff<'a> {
     wrap: bool,
     whitespace: bool,
     tab: usize,
+    context: Option<usize>,
 }
 
 impl<'a> Diff<'a> {
@@ -809,7 +953,40 @@ impl<'a> Diff<'a> {
             wrap: false,
             whitespace: false,
             tab: 4,
+            context: None,
         }
+    }
+
+    /// Fold retained unchanged runs, keeping this many lines beside each change.
+    ///
+    /// Defaults to `None`, showing all supplied source. `Some(0)` hides all retained unchanged
+    /// lines; `Some(3)` keeps three at each change edge. This only changes presentation:
+    /// unlike [`DiffDocument::compare`]'s context argument, it never discards source text.
+    /// Supply `DiffDocument::compare(old, new, usize::MAX)` to retain all available context.
+    /// Omitted patch context cannot be expanded. Changing the radius invalidates fold handles.
+    ///
+    /// ```
+    /// use ratatui_core::buffer::Buffer;
+    /// use ratatui_core::layout::Rect;
+    /// use ratatui_core::widgets::StatefulWidget;
+    /// use ratatui_diff::{Diff, DiffDocument, DiffState};
+    ///
+    /// let old = "one\ntwo\nthree\nfour\n";
+    /// let new = "one\ntwo\nchanged\nfour\n";
+    /// let document = DiffDocument::compare(old, new, usize::MAX);
+    /// let widget = Diff::new(&document).context_lines(Some(0));
+    /// let area = Rect::new(0, 0, 60, 10);
+    /// let mut state = DiffState::new();
+    /// (&widget).render(area, &mut Buffer::empty(area), &mut state);
+    /// let fold = state.context_folds()[0].clone();
+    /// assert_eq!(fold.line_count(), 2);
+    /// assert!(state.set_context_expanded(&fold, true));
+    /// (&widget).render(area, &mut Buffer::empty(area), &mut state);
+    /// assert!(state.context_expanded(&fold));
+    /// ```
+    pub fn context_lines(mut self, radius: Option<usize>) -> Self {
+        self.context = radius;
+        self
     }
 
     /// Set the selection overlay, applied after line, word, and whitespace styles.
@@ -895,6 +1072,7 @@ impl<'a> Diff<'a> {
             wrap: self.wrap,
             whitespace: self.whitespace,
             tab: self.tab,
+            context: self.context,
         };
         if state
             .selection_document
@@ -912,13 +1090,22 @@ impl<'a> Diff<'a> {
         if state.height != usize::from(area.height) {
             state.search.reveal |= state.search.active.is_some();
         }
+        if state
+            .key
+            .is_some_and(|key| key.document != self.document.id)
+        {
+            state.pending_source = None;
+        }
         state.height = usize::from(area.height);
-        if state.key == Some(key) {
+        if state.key == Some(key) && !state.folds_dirty {
             state.clamp();
             return;
         }
 
-        state.search.reveal |= state.search.active.is_some();
+        if state.key != Some(key) {
+            state.search.reveal |= state.search.active.is_some();
+        }
+        state.folds_dirty = false;
 
         // Screen offsets change with wrapping or mode; a source location survives both.
         let same_document = state.key.is_some_and(|k| k.document == key.document);
@@ -944,8 +1131,14 @@ impl<'a> Diff<'a> {
                 || previous.mode != key.mode
                 || previous.whitespace != key.whitespace
                 || previous.tab != key.tab
+                || previous.context != key.context
         });
         if rebuild_rows {
+            if state.key.is_none_or(|previous| {
+                previous.document != key.document || previous.context != key.context
+            }) {
+                state.expanded.clear();
+            }
             self.build_logical_rows(state);
         }
         self.index_screen_rows(area, state);
@@ -953,8 +1146,16 @@ impl<'a> Diff<'a> {
         // Replacing the document resets navigation; resizing retains the old source anchor.
         state.key = Some(key);
         state.offset = if same_document { old_offset } else { 0 };
-        if let Some(anchor) = anchor {
-            state.scroll_to_source(anchor);
+        if let Some(anchor) = state.pending_source.take().or(anchor) {
+            let index = match anchor.side {
+                Side::Old => &state.old_sources,
+                Side::New => &state.new_sources,
+            };
+            if let Ok(n) =
+                index.binary_search_by_key(&(anchor.file, anchor.line), |&(f, l, _)| (f, l))
+            {
+                state.offset = index[n].2;
+            }
         }
         if self.wrap || !same_document {
             state.horizontal = 0;
@@ -972,6 +1173,7 @@ impl<'a> Diff<'a> {
     /// the whole document so scrolling does not change column alignment.
     fn build_logical_rows(self, state: &mut DiffState) {
         state.rows.clear();
+        state.folds.clear();
         let max_number = self
             .document
             .files
@@ -998,7 +1200,30 @@ impl<'a> Diff<'a> {
                     .rows
                     .push(header(file, None, "Binary change", self.tab));
             }
+            let mut old_end = 1;
+            let mut new_end = 1;
             for (hunk, source) in source.hunks.iter().enumerate() {
+                let old_start = source
+                    .old
+                    .start
+                    .saturating_add(usize::from(source.old.is_empty()));
+                let new_start = source
+                    .new
+                    .start
+                    .saturating_add(usize::from(source.new.is_empty()));
+                if old_start > old_end || new_start > new_end {
+                    let mut gap = header(file, None, "… context unavailable", self.tab);
+                    gap.gap = true;
+                    state.rows.push(gap);
+                }
+                old_end = source
+                    .old
+                    .end
+                    .saturating_add(usize::from(source.old.is_empty()));
+                new_end = source
+                    .new
+                    .end
+                    .saturating_add(usize::from(source.new.is_empty()));
                 let label = format!(
                     "@@ -{},{} +{},{} @@",
                     source.old.start,
@@ -1008,8 +1233,28 @@ impl<'a> Diff<'a> {
                 );
                 state.rows.push(header(file, Some(hunk), &label, self.tab));
                 let mut n = 0;
+                let mut hidden = None;
                 while n < source.lines.len() {
                     let line = &source.lines[n];
+                    if line.kind == LineKind::Context
+                        && (n == 0 || source.lines[n - 1].kind != LineKind::Context)
+                    {
+                        hidden = self.context_fold(file, hunk, source, n, state);
+                    }
+                    let hidden_index = hidden
+                        .filter(|&(_, start, stop)| n >= start && n < stop)
+                        .map(|(index, _, _)| index);
+                    if let Some((index, start, _)) = hidden
+                        && n == start
+                    {
+                        let label = format!(
+                            "… {} unchanged lines · expand",
+                            state.folds[index].line_count()
+                        );
+                        let mut summary = header(file, Some(hunk), &label, self.tab);
+                        summary.fold = Some(index);
+                        state.rows.push(summary);
+                    }
                     if self.mode == ViewMode::Unified || line.kind == LineKind::Context {
                         let left = content(line, self.whitespace, self.tab);
                         let right = (self.mode == ViewMode::Split)
@@ -1020,6 +1265,9 @@ impl<'a> Diff<'a> {
                             left,
                             right,
                             header: false,
+                            fold: None,
+                            hidden: hidden_index,
+                            gap: false,
                         });
                         n += 1;
                     } else {
@@ -1048,6 +1296,9 @@ impl<'a> Diff<'a> {
                                 left,
                                 right: Some(right),
                                 header: false,
+                                fold: None,
+                                hidden: None,
+                                gap: false,
                             });
                         }
                         n = end;
@@ -1055,6 +1306,41 @@ impl<'a> Diff<'a> {
                 }
             }
         }
+    }
+
+    // Context runs are bounded by changes or hunk edges. Keep radius lines at each change,
+    // then derive the hidden range from original numbering rather than displayed row counts.
+    fn context_fold(
+        self,
+        file: usize,
+        hunk: usize,
+        source: &crate::Hunk,
+        n: usize,
+        state: &mut DiffState,
+    ) -> Option<(usize, usize, usize)> {
+        let radius = self.context?;
+        let end = source.lines[n..]
+            .iter()
+            .position(|line| line.kind != LineKind::Context)
+            .map_or(source.lines.len(), |length| n + length);
+        let start = n.saturating_add(if n == 0 { 0 } else { radius }).min(end);
+        let stop = end
+            .saturating_sub(if end == source.lines.len() { 0 } else { radius })
+            .max(n);
+        if start >= stop {
+            return None;
+        }
+        let first = &source.lines[start];
+        let last = &source.lines[stop - 1];
+        state.folds.push(ContextFold {
+            file,
+            hunk,
+            old: first.old.unwrap()..last.old.unwrap() + 1,
+            new: first.new.unwrap()..last.new.unwrap() + 1,
+            document: self.document.id,
+            radius,
+        });
+        Some((state.folds.len() - 1, start, stop))
     }
 
     /// Expand logical rows into screen rows and rebuild navigation indexes for this width.
@@ -1067,7 +1353,48 @@ impl<'a> Diff<'a> {
 
         let mut previous_file = None;
         let mut previous_hunk = None;
+        let expanded: Vec<_> = state
+            .folds
+            .iter()
+            .map(|fold| state.expanded.contains(fold))
+            .collect();
+        // Synthetic controls are a single row. Short labels preserve count and action first.
+        for row in &mut state.rows {
+            if let Some(index) = row.fold {
+                let count = state.folds[index].line_count();
+                let label = format!("… {count} unchanged lines · expand");
+                let label = if label.width() > usize::from(area.width) {
+                    format!("… {count} lines · expand")
+                } else {
+                    label
+                };
+                let label = if label.width() > usize::from(area.width) {
+                    format!("{count} · expand")
+                } else {
+                    label
+                };
+                row.left = header(row.file, row.hunk, &label, self.tab).left;
+            }
+        }
+        let mut folded_screen = 0;
         for (n, row) in state.rows.iter().enumerate() {
+            if let Some(index) = row.fold {
+                if expanded[index] {
+                    continue;
+                }
+                folded_screen = state.screen.len();
+            }
+            if let Some(index) = row.hidden
+                && !expanded[index]
+            {
+                if let Some(line) = row.left.old {
+                    state.old_sources.push((row.file, line, folded_screen));
+                }
+                if let Some(line) = row.right.as_ref().unwrap_or(&row.left).new {
+                    state.new_sources.push((row.file, line, folded_screen));
+                }
+                continue;
+            }
             let width = self
                 .pane_width(area.width, row.header)
                 .saturating_sub(self.gutter_width(state.digits, row.header))
@@ -1077,7 +1404,11 @@ impl<'a> Diff<'a> {
                 .max_width
                 .max(row.left.width)
                 .max(row.right.as_ref().map_or(0, |c| c.width));
-            let left = segments(&row.left, width, self.wrap);
+            let left = segments(
+                &row.left,
+                width,
+                self.wrap && row.fold.is_none() && !row.gap,
+            );
             let right = row
                 .right
                 .as_ref()
@@ -1150,6 +1481,24 @@ impl StatefulWidget for &Diff<'_> {
     /// Ratatui widgets, `area` must lie within the supplied buffer.
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut DiffState) {
         self.prepare(area, state);
+        let reveal = if state.reveal_selection {
+            state.selection.map(|selection| selection.focus.position)
+        } else if state.search.reveal {
+            state
+                .search
+                .active
+                .map(|index| state.search.matches[index].position)
+        } else {
+            None
+        };
+        if let Some(position) = reveal
+            && state.expand_source(position)
+        {
+            self.prepare(area, state);
+            if !state.reveal_selection {
+                state.search.reveal = true;
+            }
+        }
         if std::mem::take(&mut state.reveal_selection) {
             state.search.reveal = false;
             if let Some(selection) = state.selection {
@@ -1178,7 +1527,18 @@ impl StatefulWidget for &Diff<'_> {
             let gutter = self.gutter_width(state.digits, row.header).min(pane_width);
             let width = pane_width.saturating_sub(gutter);
             let py = area.y + y as u16;
-            self.draw(
+            let painter = if row.fold.is_some() || row.gap {
+                Diff {
+                    theme: DiffTheme {
+                        header: self.theme.gutter,
+                        ..self.theme
+                    },
+                    ..*self
+                }
+            } else {
+                *self
+            };
+            painter.draw(
                 &row.left,
                 screen,
                 area.x,
@@ -1319,7 +1679,10 @@ impl Diff<'_> {
         }
 
         // Wrapped segments start at their own column; unwrapped segments share the viewport offset.
-        let base = if self.wrap {
+        let synthetic = &state.rows[screen.row];
+        let base = if synthetic.fold.is_some() || synthetic.gap {
+            0
+        } else if self.wrap {
             content.glyphs[segment.start].column
         } else {
             state.horizontal
@@ -1473,6 +1836,9 @@ fn header(file: usize, hunk: Option<usize>, text: &str, tab: usize) -> Row {
         left: content(&line, false, tab),
         right: None,
         header: true,
+        fold: None,
+        hidden: None,
+        gap: false,
     }
 }
 

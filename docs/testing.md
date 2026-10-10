@@ -18,6 +18,53 @@ compare steady viewport work across document sizes. Shared CI does not gate abso
 Betamax tapes exercise the example with output waits and fixed terminal geometry. Generated images
 are ignored and belong in release assets, never repository history.
 
+## Terminal Consumer Acceptance
+
+Build this checkout's viewer with `cargo build --example viewer --locked`, then run
+`python3 scripts/terminal-ux.py`. The runner resolves the executable through Cargo metadata and
+replays the `examples/terminal-ux-*.tape` cases. Set `BETAMAX` to an explicit executable path;
+optionally set `BETAMAX_VERSION` to require its reported version. A source-built executable may
+report the preceding release version, so record its immutable source revision and build command
+alongside preliminary evidence. Set `BETAMAX_REVISION` to retain that revision in `tool.txt`.
+
+Provisional validation uses Betamax revision
+[`9a7a34597ae08f428b8363269571325e87d0984f`](https://github.com/joshka/betamax/commit/9a7a34597ae08f428b8363269571325e87d0984f),
+built with locked dependencies and Zig 0.15.2. That source reports version 0.1.21 while including
+unreleased commands; a version check alone does not establish feature availability.
+
+These cases require mouse input, live resize, and settled assertions from Betamax's terminal input
+work. The published 0.1.21 release lacks those commands. Keep the published tool pin unchanged until
+a release contains them; these cases are not yet a blocking CI job. Once that release exists, add a
+terminal acceptance job that builds the example, installs the exact released tool, runs the runner,
+and uploads `media/terminal-ux/` with `if: always()` so failure diagnostics survive.
+
+The cases reuse Betamax's consumer scenarios: real mouse selection checks old/new source previews;
+gutter, header, and blank split-side clicks cannot select source. Focused cell/style assertions
+check word emphasis, current/other search matches, and selection. Presentation toggles and live
+resize retain selected source text. Unicode checkpoints compare the preview with an original
+fixture, including combining marks, wide cells, ZWJ sequences, and source newlines. Multi-file
+search and navigation cover nine matches and viewport clamping. `c` opens the example's text
+preview; these checks make no OS clipboard claim.
+
+The context fixture adds keyboard and mouse fold expansion, collapse, search reveal, and live resize
+in split/wrapped/monochrome mode. Its paced GIF explains the interaction; PNG/JSON checkpoints and
+focused fold cells/styles check the rendered state independently of recording readability.
+
+Logs, checkpoint PNG/JSON, tool identity, and Betamax failure diagnostics live under
+`media/terminal-ux/`. The runner returns nonzero if any tape or exact-source check fails and
+continues independent tapes to retain useful evidence. Coordinates are zero-based terminal cells for
+the fixed fixture and geometry, excluding capture padding and captions. Maintain focused assertions
+when intentional layout changes move source cells; do not regenerate whole-screen baselines as an
+automatic response to failures.
+
+For parallel acceptance work, hand off an immutable revision snapshot with an explicit commit ID.
+Integrate that snapshot in a separate workspace while owners continue independent changes on stable
+parent revisions. Pause an owner only briefly when needed to capture a consistent snapshot; never
+update its workspace during active edits or captures. Keep source-control mutations with one
+coordinator and run them sequentially. Ordinary jj status, diff, and log commands can snapshot the
+working copy; use `jj --ignore-working-copy` for history inspection during an active owner's work.
+Shared jj storage does not make separate workspace directories interchangeable.
+
 ## Visual Evidence During Development and Review
 
 For visible changes, show what is being built throughout development. Capture the baseline before
@@ -28,9 +75,12 @@ Do not substitute a list of styling changes or passing tests for visual evidence
 
 Use the same fixture, terminal dimensions, font, theme, and viewport position for each comparison.
 Label intentional differences. Choose views that reveal the change: unified/split, narrow/wrapped,
-search/selection states, or metadata as appropriate. Use static images for close inspection; include
-an animation only when motion or an interaction sequence matters. Capture intermediate states when
-they explain an interaction. Show rejected experiments when they clarify a meaningful tradeoff.
+search/selection states, or metadata as appropriate. Validate meaningful rendered states with
+inspected PNG checkpoints. Demonstrate interactions with paced, captioned GIFs when clicks,
+expansion/collapse, fold-all, scrolling, or other transitions help explain the behavior. Keep
+animation readability separate from cell, state, and static-image validation; demonstrate only
+implemented interactions. Capture intermediate states when they explain an interaction. Show
+rejected experiments when they clarify a meaningful tradeoff.
 
 Keep baseline and iteration images under distinct names so earlier commentary does not silently
 change when captures are regenerated. In Codex, embed images using absolute local paths and name the
