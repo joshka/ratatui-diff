@@ -6,6 +6,7 @@ use ratatui_diff::{DiffDocument, DiffFile};
 pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
     match name {
         "showcase" => showcase(),
+        "syntax" => syntax(),
         "alignment" => alignment(),
         "context" => context(),
         "files" => files(),
@@ -18,6 +19,23 @@ pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
         )
         .into()),
     }
+}
+
+pub(super) fn syntax_sources() -> (&'static str, &'static str) {
+    (
+        include_str!("../fixtures/syntax-old.rs"),
+        include_str!("../fixtures/syntax-new.rs"),
+    )
+}
+
+fn syntax() -> Result<DiffDocument, Box<dyn Error>> {
+    let (old, new) = syntax_sources();
+    Ok(DiffDocument::new(vec![compared_file(
+        "src/retry.rs",
+        old,
+        new,
+        usize::MAX,
+    )])?)
 }
 
 fn alignment() -> Result<DiffDocument, Box<dyn Error>> {

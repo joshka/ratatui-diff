@@ -75,6 +75,46 @@
 //! synchronized across panes. Graphemes are never split at viewport edges. Disable inline
 //! highlights with [`Diff::word_highlights`] when whole-line styling is sufficient.
 //!
+//! # Syntax colors (optional)
+//!
+//! Enable the non-default `syntax` feature to use bundled Syntect grammars and two-face themes.
+//! Choose a language and theme; the adapter handles tokenization and source-byte mapping. Prepare
+//! outside drawing, then borrow the result. Complete source establishes lexical state through
+//! omitted lines; explicit `SyntaxSource::Retained` is best-effort when only patch text is
+//! available.
+//!
+//! ```
+//! # #[cfg(feature = "syntax")]
+//! # {
+//! use ratatui_diff::{
+//!     Diff, DiffDocument, DiffTheme, FileSyntax, SyntaxHighlighter, SyntaxSource,
+//! };
+//!
+//! let old = "fn retry() { let timeout = 500; }\n";
+//! let new = "fn retry() { let timeout = 1500; }\n";
+//! let document = DiffDocument::from_text(old, new);
+//! let theme = DiffTheme::aardvark_ink();
+//! let highlighter = SyntaxHighlighter::bundled("Coldark-Dark")?.contrast_with(theme)?;
+//! let styles = highlighter.prepare(
+//!     &document,
+//!     &[FileSyntax {
+//!         file: 0,
+//!         language: "rs",
+//!         source: SyntaxSource::Full { old, new },
+//!     }],
+//! )?;
+//! let diff = Diff::new(&document).theme(theme).syntax_styles(&styles)?;
+//! # }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! `contrast_with` explicitly adjusts syntax foregrounds for the selected RGB diff backgrounds;
+//! omit it to preserve bundled colors. Word/search/selection overlays remain later in composition.
+//! Syntax results own no source references. Replacing them preserves navigation and interaction
+//! state; a new document requires new preparation. Size limits bound accepted input and stored
+//! spans, not regex time. Hosts can schedule preparation on a worker. Distributing applications
+//! must include the bundled asset notices from `SyntaxHighlighter::acknowledgements`.
+//!
 //! # Navigate and retain the viewport
 //!
 //! Render once before page navigation or source mapping so [`DiffState`] has the viewport
@@ -172,11 +212,18 @@ mod model;
 mod parse;
 mod search;
 mod selection;
+#[cfg(feature = "syntax")]
+mod syntax;
 mod theme;
 mod widget;
 
 pub use model::{DiffDocument, DiffError, DiffFile, DiffLine, Hunk, LineKind, Side};
 pub use selection::{SelectionMotion, SourceBoundary, SourceSelection};
+#[cfg(feature = "syntax")]
+pub use syntax::{
+    FileSyntax, SyntaxError, SyntaxHighlighter, SyntaxLimit, SyntaxLimits, SyntaxSource,
+    SyntaxStyles,
+};
 pub use theme::DiffTheme;
 pub use widget::{
     ContextFold, Diff, DiffState, FileFold, HitTest, SourcePosition, SourceRange, ViewMode,

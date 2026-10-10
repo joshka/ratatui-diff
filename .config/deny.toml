@@ -1,5 +1,8 @@
 [advisories]
 version = 2
+# Syntect requires Bincode 1 to load fixed bundled grammars/themes. No external dumps are accepted.
+# This is an unmaintained notice, not a reported vulnerability; no patched release exists.
+ignore = [{ id = "RUSTSEC-2025-0141", reason = "Syntect's bundled assets require Bincode 1.3.3; revisit when the engine migrates" }]
 [licenses]
 version = 2
 allow = ["MIT", "Apache-2.0", "Unicode-3.0", "Zlib"]

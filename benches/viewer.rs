@@ -134,6 +134,12 @@ fn benches(c: &mut Criterion) {
 #[path = "support/scenarios.rs"]
 mod scenarios;
 
+#[cfg(feature = "syntax")]
+#[path = "support/syntax.rs"]
+mod syntax;
+#[cfg(feature = "syntax")]
+criterion_group!(viewer, benches, scenarios::benches, syntax::benches);
+#[cfg(not(feature = "syntax"))]
 criterion_group!(viewer, benches, scenarios::benches);
 #[path = "support/memory.rs"]
 mod memory;
