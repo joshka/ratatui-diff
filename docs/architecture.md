@@ -37,6 +37,15 @@ A displayed line is a screen row, including headers and wrapped continuations. S
 numbered independently. Mode/width changes preserve the nearest available source anchor; document
 replacement resets the viewport. Missing patch context cannot be recovered by rendering.
 
+File folding retains the file header and hides its metadata, hunks, and source. Files default to
+expanded. Document-issued `FileFold` handles carry immutable file indexes and document identities. A
+fresh state can queue preferences before drawing by binding to the first handle's document; the
+matching first render preserves those preferences. Rendering another document clears them and binds
+to the replacement. Clones preserve identity. Width and mode changes preserve both file and context
+expansion; context-radius changes preserve file expansion. Collapsed file headers remain control
+hits with no source coordinates. See [folding controls](folding.md) for saved-state and bulk host
+flows.
+
 Context folding changes presentation of retained context runs within a hunk. It never crosses an
 unavailable gap or changes source text, line numbers, or hunk ranges. The presentation option
 selects how many context lines remain beside changes: `Diff::context_lines(None)` disables folding
@@ -51,14 +60,17 @@ radius; changing either clears expansion and rejects stale handles. `context_fol
 expanded candidates so hosts can offer collapse controls. A collapsed fold is a synthetic
 `HitTest::Fold` with no source byte range or selection boundary. Known leading and inter-hunk gaps
 use an unavailable context cue with an ordinary header hit; no trailing gap is inferred from an
-unknown source extent. File and hunk navigation retain their original header targets.
+unknown source extent. Context candidates and their expansion preferences remain available while
+their containing file is collapsed. File navigation visits its header without expanding it; hunk
+navigation opens the containing file and visits the original hunk header.
 
 Search indexes and selection extraction include folded retained text. `scroll_to_source` accepts a
 retained line inside a collapsed fold, then expands and scrolls to it on the next render. Requested
-search or selection reveal also expands the containing fold before resolving its source position in
-the new layout. Setting a selection alone leaves folds collapsed. Extraction across unavailable
-source gaps continues to fail rather than inserting display summaries or guessed text. Hosts own
-filesystem and repository access if they need to construct a replacement document with more source.
+search or selection reveal also opens the containing file and expands the context fold before
+resolving its source position in the new layout. Setting a query or selection alone leaves folds
+collapsed. Manual collapse cancels pending automatic reveal. Extraction across unavailable source
+gaps continues to fail rather than inserting display summaries or guessed text. Hosts own filesystem
+and repository access if they need to construct a replacement document with more source.
 
 Split content uses equal source widths and one separator cell. At even widget widths, the spare
 rightmost cell is padding painted with the right row's style. It adds no source column, so wrapping
