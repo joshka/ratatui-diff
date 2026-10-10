@@ -34,6 +34,14 @@ lookup for horizontal clipping. Source indexes support navigation without a scan
 document. Comparison never runs during rendering. First layout and resize may still process the
 whole document.
 
+`Diff::sticky_file_headers(true)` reserves one row below optional document statistics when at least
+two rows remain. The file at the scroll offset supplies the header; its natural header is not
+duplicated. The reserved content height stays constant across file boundaries for page movement and
+reveal/clamp calculations. The repeated header is outside the absolute screen-row index; rendering
+and hit-testing share its screen-row identity. Source indexes and row counts remain unchanged. At
+the first step away from a natural header, that header becomes pinned while the first body row stays
+in place. One-row areas use ordinary scrolling.
+
 A displayed line is a screen row, including headers and wrapped continuations. Source lines are
 numbered independently. Mode/width changes preserve the nearest available source anchor; document
 replacement resets the viewport. Missing patch context cannot be recovered by rendering.
