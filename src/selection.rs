@@ -1,4 +1,4 @@
-//! Source-text extraction shared by keyboard and pointer selection.
+//! Source validation and extraction shared by keyboard and pointer selection.
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -71,7 +71,17 @@ impl SourceSelection {
     /// ```
     pub fn text(self, document: &DiffDocument) -> Option<String> {
         let (start, end) = self.ordered()?;
-        extract(document, start.position, start.byte, end.position, end.byte)
+        let mut selected = String::new();
+        visit_source(document, start, end, |text| selected.push_str(text))?;
+        Some(selected)
+    }
+
+    /// Check the same source boundaries and continuity as extraction without copying source text.
+    pub(crate) fn is_valid(self, document: &DiffDocument) -> bool {
+        let Some((start, end)) = self.ordered() else {
+            return false;
+        };
+        visit_source(document, start, end, |_| {}).is_some()
     }
 
     pub(crate) fn intersects(
@@ -114,16 +124,18 @@ pub(crate) fn boundary(line: &DiffLine, byte: usize) -> bool {
             .any(|(start, _)| start == byte)
 }
 
-pub(crate) fn extract(
+/// Visit retained source slices in order, rejecting gaps before reporting success.
+/// Validation and extraction share this traversal so their accepted ranges cannot diverge.
+fn visit_source(
     document: &DiffDocument,
-    start: SourcePosition,
-    start_byte: usize,
-    end: SourcePosition,
-    end_byte: usize,
-) -> Option<String> {
-    if start.file != end.file || start.side != end.side || start.line > end.line {
-        return None;
-    }
+    start: SourceBoundary,
+    end: SourceBoundary,
+    mut visit: impl FnMut(&str),
+) -> Option<()> {
+    let start_byte = start.byte;
+    let end_byte = end.byte;
+    let start = start.position;
+    let end = end.position;
     let first = source_line(document, start)?;
     let last = source_line(document, end)?;
     if !boundary(first, start_byte) || !boundary(last, end_byte) {
@@ -132,7 +144,6 @@ pub(crate) fn extract(
     if start.line == end.line && start_byte > end_byte {
         return None;
     }
-    let mut selected = String::new();
     let mut expected = start.line;
     for line in document
         .files()
@@ -158,15 +169,15 @@ pub(crate) fn extract(
         } else {
             line.text.len() + usize::from(line.terminated)
         };
-        selected.push_str(
+        visit(
             line.text
                 .get(from.min(line.text.len())..to.min(line.text.len()))?,
         );
         if to > line.text.len() && from <= line.text.len() {
-            selected.push('\n');
+            visit("\n");
         }
         if number == end.line {
-            return Some(selected);
+            return Some(());
         }
         expected = expected.checked_add(1)?;
     }
