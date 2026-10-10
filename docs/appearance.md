@@ -55,7 +55,9 @@ let diff = Diff::new(&document)
 ![Unified view shows the removed retry settings immediately before their replacements.](../media/aardvark-unified.png)
 
 Split view keeps old and new source adjacent, with blank rows aligning changes of different lengths.
-Replacements pair in source order; moved code is not detected.
+Replacements use bounded similarity anchors, preserving source order within unanchored gaps. Large
+runs fall back to positional pairing; moved code is not detected. See
+[split alignment](split-alignment.md) for bounds and examples.
 
 ## Adjust word highlights and line numbers
 

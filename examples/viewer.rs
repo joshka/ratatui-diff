@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut arguments: Vec<_> = arguments.iter().map(String::as_str).collect();
     if arguments.as_slice() == ["--help"] {
         println!(
-            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nFixtures: showcase (default), context, files, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
+            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nFixtures: showcase (default), context, files, alignment, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
         );
         return Ok(());
     }
