@@ -122,11 +122,43 @@ jobs:
           else
             echo 'No published baseline yet; initial release.'
           fi
+  terminal-acceptance:
+    name: terminal acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BETAMAX_VERSION: 0.1.22
+      BETAMAX_REVISION: 5650cb1ebcf7251b34ee9e9f70bfe7bb3f3242b2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install the published Betamax binary
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/joshka/betamax/releases/download/betamax-v0.1.22/betamax-0.1.22-x86_64-unknown-linux-gnu.tgz \
+            --output "$RUNNER_TEMP/betamax.tgz"
+          echo '497c0bbf6da724e90be49e48ade317d99567e4b03e4e86f03c0dac691ec6358f  '"$RUNNER_TEMP/betamax.tgz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/betamax"
+          tar --extract --gzip --file "$RUNNER_TEMP/betamax.tgz" --directory "$RUNNER_TEMP/betamax"
+          echo "BETAMAX=$RUNNER_TEMP/betamax/betamax" >> "$GITHUB_ENV"
+      - run: cargo build --example viewer --locked
+      - run: python3 scripts/terminal-ux.py
+      - name: Retain terminal checkpoints and failure diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: terminal-acceptance
+          path: media/terminal-ux/
+          if-no-files-found: warn
+          retention-days: 14
   required:
     name: required
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [formatting, tests, clippy, documentation, policy, semver]
+    needs: [formatting, tests, clippy, documentation, policy, semver, terminal-acceptance]
     if: ${{ always() }}
     steps:
       - name: Require all blocking jobs to succeed

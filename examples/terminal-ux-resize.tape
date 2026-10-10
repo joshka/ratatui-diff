@@ -1,6 +1,7 @@
 # Adapted from Betamax PR172 at 2688c76e9f1b1d930c9be056f91d63258ceb6c79.
 # Set RATATUI_DIFF_VIEWER to a built viewer from merged ratatui-diff main.
-Set Shell "bash"
+Output media/terminal-ux/selection-resize-interaction.gif
+Set Shell "bash --noprofile --norc"
 Set Width 1340
 Set Height 680
 Set FontFamily "JetBrains Mono"
@@ -15,16 +16,23 @@ Type "exec \"$RATATUI_DIFF_VIEWER\" --aardvark-ink"
 Enter
 Wait+Screen@5s "timeout_ms: 1500"
 Caption "Before: source diff, no selection"
+Show
 Screenshot media/terminal-ux/diff-before.png
 State media/terminal-ux/diff-before.json
+Sleep 1800ms
+Caption "Press at new 1500; keep the drag active through resize"
 # Cell coordinates are pinned to this fixture and geometry.
 MouseMove 29 10
 MouseDown Left
+Sleep 800ms
 # Keep the drag active while the terminal grid changes.
 Resize 50 16
 AssertCells 29 10 '["1","5","0","0"]'
+Sleep 1200ms
 # File headers remain visible at compact height; the source row stays at row 10.
+Caption "Finish the drag, then c previews the exact selected source"
 MouseMove 32 10
+Sleep 800ms
 MouseUp Left
 Type "c"
 AssertText 'Text preview: "1500"'
@@ -33,14 +41,18 @@ AssertText 'Text preview: "1500"'
 Caption "After: mouse drag selects new 1500; c previews exact source"
 Screenshot media/terminal-ux/diff-after.png
 State media/terminal-ux/diff-after.json
+Sleep 2200ms
 Resize 50 16
 Wait+Screen@5s "Arrows select · c preview · Esc clear"
 Caption "Resized: 50x16 grid retains the selected source and preview"
 Screenshot media/terminal-ux/diff-resize-50x16.png
 State media/terminal-ux/diff-resize-50x16.json
+Sleep 2200ms
 Resize 92 25
 Wait+Screen@5s "Home/End"
 Caption "Restored: 92x25 grid retains exact 1500 source selection"
 Screenshot media/terminal-ux/diff-resize-restored.png
 State media/terminal-ux/diff-resize-restored.json
+Sleep 1800ms
+Hide
 Type "q"
