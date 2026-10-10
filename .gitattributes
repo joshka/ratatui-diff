@@ -1,0 +1,2 @@
+/docs/assets/sticky-headers/*.png filter=lfs diff=lfs merge=lfs -text
+/docs/assets/sticky-headers/*.gif filter=lfs diff=lfs merge=lfs -text

@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if arguments.as_slice() == ["--help"] {
         println!(
-            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nFixtures: showcase (default), context, files, alignment, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
+            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nUse --sticky-headers to keep the current file header visible.\n\nFixtures: showcase (default), context, files, alignment, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
         );
         #[cfg(feature = "syntax")]
         println!("Syntax: --syntax THEME [--syntax-contrast], --syntax-licenses; h toggles prepared syntax.
@@ -98,6 +98,8 @@ Use --fixture syntax for complete Rust sources; other fixtures use best-effort r
         println!("{}", state.row_count());
         return Ok(());
     }
+    let sticky_headers = arguments.contains(&"--sticky-headers");
+    arguments.retain(|argument| *argument != "--sticky-headers");
     let color_theme =
         match arguments.as_slice() {
             [] => DiffTheme::dark(),
@@ -118,6 +120,7 @@ Use --fixture syntax for complete Rust sources; other fixtures use best-effort r
             &mut terminal,
             color_theme,
             document,
+            sticky_headers,
             #[cfg(feature = "syntax")]
             syntax,
         )
@@ -254,6 +257,7 @@ fn run(
     terminal: &mut DefaultTerminal,
     color_theme: DiffTheme,
     document: DiffDocument,
+    sticky_headers: bool,
     #[cfg(feature = "syntax")] syntax: Option<ratatui_diff::SyntaxStyles>,
 ) -> Result<(), Box<dyn Error>> {
     let mut state = DiffState::new();
@@ -322,6 +326,7 @@ fn run(
             let widget = Diff::new(&document)
                 .context_lines(Some(3))
                 .show_stats(show_stats)
+                .sticky_file_headers(sticky_headers)
                 .mode(mode)
                 .wrap(wrap)
                 .whitespace(whitespace)
