@@ -80,3 +80,15 @@ and never includes header labels or fold summaries. Full retained context for di
 inputs is available through `DiffDocument::compare(old, new, usize::MAX)`; the default comparison
 retains three context lines, and identical inputs still have no hunks. Retrieval of unavailable
 source remains host work.
+
+## Change counts and totals
+
+File headers color additions and deletions with the theme's insertion/deletion foregrounds, while
+keeping the header background. Monochrome keeps the `+` and `−` signs without requiring color.
+Counts include supplied changed lines; wrapping and folding never change them. Binary payloads have
+no line estimate, and metadata-only changes are labeled separately.
+
+Use `Diff::new(&document).show_stats(true)` to pin a document-wide summary above the scrollable
+content. It reserves one row and stays visible when files are collapsed or the diff is scrolled. The
+option defaults to off. The summary has no source identity or hit target; the remaining rows form
+the navigation viewport. The example's `d` key toggles totals.

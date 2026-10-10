@@ -117,6 +117,8 @@ impl FileFold {
 struct FileSummary {
     path: String,
     changes: String,
+    added: usize,
+    removed: usize,
 }
 
 impl FileSummary {
@@ -142,7 +144,12 @@ impl FileSummary {
         } else {
             format!("+{added} −{removed}")
         };
-        Self { path, changes }
+        Self {
+            path,
+            changes,
+            added,
+            removed,
+        }
     }
 
     fn label(&self, expanded: bool, width: usize) -> String {
@@ -383,6 +390,8 @@ pub struct DiffState {
     file_document: Option<u64>,
     file_folds: Vec<FileFold>,
     file_summaries: Vec<FileSummary>,
+    // Document-wide supplied-line counts, prepared once with file summaries.
+    statistics: String,
     collapsed_files: HashSet<usize>,
 }
 
@@ -1149,6 +1158,7 @@ pub struct Diff<'a> {
     whitespace: bool,
     tab: usize,
     context: Option<usize>,
+    show_stats: bool,
 }
 
 impl<'a> Diff<'a> {
@@ -1169,6 +1179,7 @@ impl<'a> Diff<'a> {
             whitespace: false,
             tab: 4,
             context: None,
+            show_stats: false,
         }
     }
 
@@ -1201,6 +1212,23 @@ impl<'a> Diff<'a> {
     /// ```
     pub fn context_lines(mut self, radius: Option<usize>) -> Self {
         self.context = radius;
+        self
+    }
+
+    /// Pin document-wide change totals above the scrollable diff. Disabled by default.
+    ///
+    /// Reserves one viewport row, including when all files are collapsed. Counts cover supplied
+    /// insertion/deletion lines, independently of folding, wrapping, and view mode; they never
+    /// estimate binary payload size or omitted source. Binary and metadata-only files are labeled
+    /// separately. The summary has no source coordinates or hit target.
+    ///
+    /// ```
+    /// use ratatui_diff::{Diff, DiffDocument};
+    /// let document = DiffDocument::from_text("old\n", "new\n");
+    /// let widget = Diff::new(&document).show_stats(true);
+    /// ```
+    pub fn show_stats(mut self, visible: bool) -> Self {
+        self.show_stats = visible;
         self
     }
 
@@ -1565,6 +1593,31 @@ impl<'a> Diff<'a> {
                 }
             }
         }
+        let added: usize = state.file_summaries.iter().map(|file| file.added).sum();
+        let removed: usize = state.file_summaries.iter().map(|file| file.removed).sum();
+        let files = self.document.files.len();
+        let noun = if files == 1 { "file" } else { "files" };
+        state.statistics = format!("{files} {noun} · +{added} −{removed}");
+        let binary = self
+            .document
+            .files
+            .iter()
+            .filter(|file| file.binary)
+            .count();
+        let metadata = self
+            .document
+            .files
+            .iter()
+            .filter(|file| !file.binary && file.hunks.is_empty() && !file.metadata.is_empty())
+            .count();
+        if binary != 0 {
+            state.statistics.push_str(&format!(" · {binary} binary"));
+        }
+        if metadata != 0 {
+            state
+                .statistics
+                .push_str(&format!(" · {metadata} metadata"));
+        }
     }
 
     // Context runs are bounded by changes or hunk edges. Keep radius lines at each change,
@@ -1764,6 +1817,17 @@ impl StatefulWidget for &Diff<'_> {
     /// cached geometry when possible; changing document identity resets navigation. As with other
     /// Ratatui widgets, `area` must lie within the supplied buffer.
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut DiffState) {
+        let full_area = area;
+        let area = if self.show_stats && area.height != 0 {
+            Rect::new(
+                area.x,
+                area.y.saturating_add(1),
+                area.width,
+                area.height - 1,
+            )
+        } else {
+            area
+        };
         self.prepare(area, state);
         let reveal = if state.reveal_selection {
             state.selection.map(|selection| selection.focus.position)
@@ -1792,12 +1856,29 @@ impl StatefulWidget for &Diff<'_> {
             state.reveal_match();
         }
         state.rendered = Some((area, state.offset, state.horizontal));
-        buf.set_style(area, self.theme.context);
-        for y in area.y..area.bottom() {
-            for x in area.x..area.right() {
+        buf.set_style(full_area, self.theme.context);
+        for y in full_area.y..full_area.bottom() {
+            for x in full_area.x..full_area.right() {
                 buf[(x, y)].reset();
                 buf[(x, y)].set_style(self.theme.context);
             }
+        }
+        if self.show_stats && full_area.height != 0 {
+            buf.set_stringn(
+                full_area.x,
+                full_area.y,
+                &state.statistics,
+                usize::from(full_area.width),
+                self.theme.header,
+            );
+            self.color_counts(
+                buf,
+                full_area.x,
+                full_area.y,
+                usize::from(full_area.width),
+                &state.statistics,
+                0,
+            );
         }
         for (y, screen) in state
             .screen
@@ -1835,6 +1916,11 @@ impl StatefulWidget for &Diff<'_> {
                 buf,
                 state,
             );
+            if row.file_header {
+                let counts = &state.file_summaries[row.file].changes;
+                let start = row.left.width.saturating_sub(counts.width());
+                self.color_counts(buf, area.x, py, usize::from(area.width), counts, start);
+            }
             if let Some(right) = &row.right {
                 let x = area.x + pane_width as u16;
                 if x < area.right() {
@@ -1861,6 +1947,37 @@ impl StatefulWidget for &Diff<'_> {
 }
 
 impl Diff<'_> {
+    /// Color only count tokens, retaining the header background and modifiers.
+    ///
+    /// File paths are excluded by the caller, so `+` or `−` in a path cannot acquire diff colors.
+    /// Foregrounds come from line roles; tinted source-row backgrounds do not leak into headers.
+    fn color_counts(
+        self,
+        buf: &mut Buffer,
+        x: u16,
+        y: u16,
+        width: usize,
+        text: &str,
+        start: usize,
+    ) {
+        let mut column = start;
+        for token in text.split_inclusive(' ') {
+            let foreground = if token.starts_with('+') {
+                self.theme.insert.fg
+            } else if token.starts_with('−') {
+                self.theme.delete.fg
+            } else {
+                None
+            };
+            if let Some(fg) = foreground {
+                for cell in column..(column + token.trim_end().width()).min(width) {
+                    buf[(x + cell as u16, y)].set_fg(fg);
+                }
+            }
+            column += token.width();
+        }
+    }
+
     // Paint one pane's glyph range. x/y are buffer coordinates; pane/gutter/width are cell counts.
     // The segment indexes prepared glyphs. Geometry comes from the same layout used for wrapping.
     #[allow(clippy::too_many_arguments)] // Geometry is explicit at the sole cell-writing boundary.
