@@ -177,4 +177,6 @@ mod widget;
 pub use model::{DiffDocument, DiffError, DiffFile, DiffLine, Hunk, LineKind, Side};
 pub use selection::{SelectionMotion, SourceBoundary, SourceSelection};
 pub use theme::DiffTheme;
-pub use widget::{ContextFold, Diff, DiffState, HitTest, SourcePosition, SourceRange, ViewMode};
+pub use widget::{
+    ContextFold, Diff, DiffState, FileFold, HitTest, SourcePosition, SourceRange, ViewMode,
+};
