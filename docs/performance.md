@@ -323,3 +323,10 @@ candidate above implements its first investigation; the remaining units are inde
 The original baseline includes no core optimization or CI timing gate. Private allocator
 attribution, peak RSS, many-file/many-fold scaling, terminal output latency, and candidate alignment
 performance remain unmeasured.
+
+## Folding and resize profiles after glyph storage
+
+[The folding and resize report](folding-resize-performance.md) profiles shipped `b5d6930c` with many
+files and context folds. It separates state mutation, first redraw, narrow resize, and warm frames,
+then attributes transition costs with recorded stacks. Its evidence and bounded follow-up
+investigations supplement the historical measurements above; it includes no runtime optimization.
