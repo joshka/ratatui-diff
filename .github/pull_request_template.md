@@ -1,4 +1,6 @@
-<!-- Open with the concrete problem and result in one or two sentences. -->
-<!-- Use short behavior bullets and evidence/validation headings when they help skimming. -->
-<!-- Retain caller implications and material limits; link full contracts. -->
-<!-- Follow docs/pr-writing.md. Remove these prompts and fit the structure to the change. -->
+<!-- Open with the concrete caller need and newly available result in one or two sentences. -->
+<!-- For new capabilities, show enabling public Rust calls near the top; links supplement usage. -->
+<!-- Explain defaults/opt-in, caller responsibilities, and material compatibility changes. -->
+<!-- Put relevant captioned evidence after usage, then report compact actual validation results. -->
+<!-- Distinguish public availability from proposals, prototypes, fixtures, and published releases. -->
+<!-- Follow docs/pr-writing.md. Remove these prompts and omit examples/sections that add no value. -->
