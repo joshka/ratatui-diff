@@ -2,3 +2,4 @@
 /media/
 *.profraw
 /lcov.info
+/site/public/assets/

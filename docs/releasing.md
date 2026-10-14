@@ -58,7 +58,6 @@ README capture uses 1440×720 pixels, 22-pixel JetBrains Mono, and Aardvark Ink.
 holds each view for five seconds and hides transitions; captions explain features independently of
 key bindings.
 
-Curated documentation-site images follow the separately authorized Git LFS policy in
-[the site proposal](docs-site-design.md#media-storage-and-validation). Ordinary capture outputs and
-review intermediates stay ignored. Site publication remains a separate implementation and deployment
-step; a future ratatui.rs link is outside this repository.
+The [documentation site](docs-site.md) commits no generated images: its workflow replays the tapes
+against the viewer built from the published revision and deploys every push to `main`. A future
+ratatui.rs link is outside this repository.

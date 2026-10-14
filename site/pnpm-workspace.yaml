@@ -1,0 +1,7 @@
+overrides:
+  esbuild: 0.28.1
+  postcss-selector-parser: 7.1.6
+  yaml: 2.8.4
+allowBuilds:
+  esbuild: true
+  sharp: true

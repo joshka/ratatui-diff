@@ -1,0 +1,83 @@
+/* Aardvark Ink, the palette used by every capture, so screenshots sit on matching chrome. */
+:root {
+  --sl-color-white: #dfe5ee;
+  --sl-color-gray-1: #c9d0db;
+  --sl-color-gray-2: #b4bcca;
+  --sl-color-gray-3: #6f7a8f;
+  --sl-color-gray-4: #3a4152;
+  --sl-color-gray-5: #222734;
+  --sl-color-gray-6: #161b27;
+  --sl-color-black: #0f141f;
+  --sl-color-accent-low: #10302f;
+  --sl-color-accent: #269d9a;
+  --sl-color-accent-high: #a5e6e3;
+  --sl-color-text-accent: #52c4c0;
+  --sl-color-bg-nav: #0c1019;
+  --sl-color-bg-sidebar: #0c1019;
+  --sl-color-hairline: #2a3142;
+  /* Captures are ~1460px wide; give them more room than Starlight's 45rem default. */
+  --sl-content-width: 54rem;
+}
+
+:root[data-theme='light'] {
+  --sl-color-white: #0f141f;
+  --sl-color-gray-1: #222734;
+  --sl-color-gray-2: #3a4152;
+  --sl-color-gray-3: #5a6377;
+  --sl-color-gray-4: #9aa3b3;
+  --sl-color-gray-5: #cdd3dd;
+  --sl-color-gray-6: #e9edf2;
+  --sl-color-gray-7: #f5f7fa;
+  --sl-color-black: #ffffff;
+  --sl-color-accent-low: #cdeeed;
+  --sl-color-accent: #137a77;
+  --sl-color-accent-high: #0b3f3d;
+  --sl-color-text-accent: #106a67;
+  --sl-color-bg-nav: #f5f7fa;
+  --sl-color-bg-sidebar: #f5f7fa;
+  --sl-color-hairline: #d5dae3;
+}
+
+/* Terminal captures keep their own palette in either site theme; frame them like a terminal. */
+.sl-markdown-content img {
+  display: block;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 0.5rem;
+  background: #0f141f;
+}
+
+.sl-markdown-content figure {
+  margin-block: 1.5rem;
+}
+
+.sl-markdown-content figcaption {
+  margin-top: 0.5rem;
+  color: var(--sl-color-gray-3);
+  font-size: var(--sl-text-sm);
+}
+
+.compare {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.compare figure {
+  margin: 0;
+}
+
+.hero-shot {
+  margin-block: 2rem 1rem;
+}
+
+.hero-shot img {
+  width: 100%;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 0.75rem;
+  box-shadow: 0 1.5rem 3rem -1.5rem rgb(0 0 0 / 0.6);
+}
+
+details.gif summary {
+  cursor: pointer;
+  color: var(--sl-color-text-accent);
+}

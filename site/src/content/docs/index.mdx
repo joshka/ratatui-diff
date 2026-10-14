@@ -1,0 +1,79 @@
+---
+title: ratatui-diff
+description: A navigable unified and split diff widget for Ratatui.
+template: splash
+hero:
+  tagline: >-
+    A navigable unified and split diff widget for Ratatui. Show text comparisons or Git patches with
+    line numbers, word highlights, folding, search, and source-accurate selection.
+  actions:
+    - text: Get started
+      link: /ratatui-diff/getting-started/
+      icon: right-arrow
+    - text: API reference
+      link: https://docs.rs/ratatui-diff
+      icon: external
+      variant: minimal
+    - text: GitHub
+      link: https://github.com/joshka/ratatui-diff
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<figure class="hero-shot">
+  <img
+    src="/ratatui-diff/assets/split.png"
+    width="1458"
+    height="352"
+    alt="Split view of a Rust change: the old timeout and retry count on the left, their replacements and an added backoff line on the right, with changed words emphasized."
+  />
+</figure>
+
+```toml
+[dependencies]
+ratatui-diff = "0.1"
+```
+
+<CardGrid>
+  <Card title="Any input" icon="document">
+    Compare two strings, parse unified or multi-file Git patches, or supply structured files and
+    hunks. See [Choose an input](./guides/inputs/).
+  </Card>
+  <Card title="Unified or split" icon="seti:image">
+    Switch layouts without losing your place. Wrap long lines, show whitespace, hide numbers, and
+    choose a theme. See [Appearance](./guides/appearance/).
+  </Card>
+  <Card title="Built for review" icon="magnifier">
+    Jump by hunk or file, search source, fold files and unchanged context, and keep the current file
+    header visible. See [Navigation](./guides/navigation/) and [Folding](./guides/folding/).
+  </Card>
+  <Card title="Exact source" icon="pencil">
+    Selection copies the original bytes, never gutters or padding. Hit-testing maps terminal cells
+    back to file, side, line, and byte. See [Selection](./guides/selection/).
+  </Card>
+  <Card title="Optional syntax colors" icon="seti:rust">
+    Enable the `syntax` feature for bundled grammars and themes, composed underneath diff styling.
+    See [Syntax colors](./guides/syntax/).
+  </Card>
+  <Card title="You own the app" icon="setting">
+    Rendering depends only on `ratatui-core`. Your application keeps terminal setup, key bindings,
+    files, and repository access.
+  </Card>
+</CardGrid>
+
+## See it move
+
+The bundled viewer example cycles through unified view, split view, and visible whitespace. Run it
+with `cargo run --example viewer`.
+
+<figure>
+  <img
+    src="/ratatui-diff/assets/viewer.gif"
+    width="1440"
+    height="720"
+    loading="lazy"
+    alt="Animated capture of the example viewer switching from unified view to split view and then turning on whitespace markers."
+  />
+</figure>

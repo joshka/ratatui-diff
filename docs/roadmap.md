@@ -52,4 +52,3 @@ chosen contract is `StatefulWidget` with separate state.
 | Non-UTF-8 sources                                    | Requires byte-oriented rendering contracts               | A consumer needs faithful arbitrary-byte display                                   |
 | Streaming and million-line inputs                    | Changes ownership, indexes, and incremental state        | Large in-memory measurements establish a limit                                     |
 | Standalone pager, Git/jj integration, external tools | Product and I/O scope belongs outside the widget         | A separate application or adapter is requested                                     |
-| Documentation website                                | Needs curated examples, media provenance, and deployment | Implement the [small-site proposal](docs-site-design.md) in a separate review unit |

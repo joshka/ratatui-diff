@@ -1,0 +1,78 @@
+---
+title: Getting started
+description: Add ratatui-diff to a Ratatui application and render your first diff.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import minimal from '../../../../examples/minimal.rs?raw';
+
+`ratatui-diff` is a widget, not an application. You prepare a `DiffDocument`, keep a `DiffState`
+between frames, and render a `Diff` inside your own draw callback. Your application owns the
+terminal, the event loop, key bindings, and where the source text comes from.
+
+## Install
+
+```sh
+cargo add ratatui-diff
+```
+
+Rendering depends only on `ratatui-core`, so the widget works with any Ratatui backend. The optional
+`syntax` feature adds [syntax colors](../guides/syntax/).
+
+## The three pieces
+
+| Type           | Lifetime                   | Role                                                                  |
+| -------------- | -------------------------- | --------------------------------------------------------------------- |
+| `DiffDocument` | Once per comparison        | Immutable files, hunks, lines, and word highlights. Prepare it once.  |
+| `DiffState`    | As long as the view exists | Viewport, cached layout, folds, search, and selection.                |
+| `Diff`         | One frame                  | Borrows the document and selects presentation options for this frame. |
+
+Building a `Diff` is cheap; build it in the draw closure. Changing presentation (mode, wrapping,
+theme) keeps the viewport anchored to the nearest source line. Rendering a different document resets
+navigation on that render.
+
+## A complete application
+
+This is
+[`examples/minimal.rs`](https://github.com/joshka/ratatui-diff/blob/main/examples/minimal.rs). It
+compares two strings, renders them with the Aardvark Ink theme, and wires a few keys to navigation.
+Run it with `cargo run --example minimal`.
+
+<Code code={minimal} lang="rust" title="examples/minimal.rs" />
+
+It opens in unified view:
+
+![The minimal example in unified view: the timeout and status check are removed and replaced, with the changed values emphasized.](/ratatui-diff/assets/minimal-unified.png)
+
+Press `s` to switch to split view. The same `DiffState` is reused, so the viewport stays in place:
+
+![The minimal example in split view, with the old function on the left and the new function on the right.](/ratatui-diff/assets/minimal-split.png)
+
+## Render before you navigate
+
+Navigation methods like `scroll_pages`, `next_hunk`, and `scroll_to_source` need the viewport size
+and row positions, which the state learns during rendering. Draw at least once before handling
+navigation or hit-testing. Methods called between frames take effect on the next draw.
+
+Tests and non-interactive code can render directly into a buffer:
+
+```rust
+use ratatui_core::buffer::Buffer;
+use ratatui_core::layout::Rect;
+use ratatui_core::widgets::StatefulWidget;
+use ratatui_diff::{Diff, DiffDocument, DiffState};
+
+let document = DiffDocument::from_text("hello world\n", "hello Rust\n");
+let area = Rect::new(0, 0, 80, 20);
+let mut buffer = Buffer::empty(area);
+let mut state = DiffState::new();
+(&Diff::new(&document)).render(area, &mut buffer, &mut state);
+state.scroll_pages(1);
+```
+
+## Next steps
+
+- [Choose an input](../guides/inputs/): strings, Git patches, or structured hunks.
+- [Appearance](../guides/appearance/): layouts, wrapping, whitespace, and themes.
+- [Interactive viewer](../reference/viewer/): a fuller host with mouse, search, selection, and
+  folding.
