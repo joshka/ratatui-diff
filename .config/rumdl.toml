@@ -8,3 +8,8 @@ ignore-link-urls = true
 [table-format]
 enabled = true
 style = "aligned"
+
+# Site pages link to built routes and embed MDX/HTML figures, which file-based checks can't resolve.
+[per-file-ignores]
+"site/**/*.md" = ["MD033", "MD057"]
+"site/**/*.mdx" = ["MD033", "MD057"]

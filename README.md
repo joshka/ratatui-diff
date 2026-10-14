@@ -226,10 +226,11 @@ each captioned view for five seconds.
 
 ## Development
 
-See [Contributing](CONTRIBUTING.md), [architecture](docs/architecture.md),
-[dependency decisions](docs/dependencies.md), and [deferred work](docs/roadmap.md). Run
-`just example` for the interactive viewer. See [releasing](docs/releasing.md) for package and
-screenshot publication.
+The [user guide](https://www.joshka.net/ratatui-diff/) walks through inputs, appearance, and
+interaction with screenshots. See [Contributing](CONTRIBUTING.md),
+[architecture](docs/architecture.md), [dependency decisions](docs/dependencies.md), and
+[deferred work](docs/roadmap.md). Run `just example` for the interactive viewer. See
+[releasing](docs/releasing.md) for package and screenshot publication.
 
 ## License
 

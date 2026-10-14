@@ -7,7 +7,8 @@ Read [Rust conventions](docs/rust-conventions.md), [documentation](docs/document
 [Rustdoc contracts](docs/rustdoc.md) when changing their respective surfaces. Use
 [architecture](docs/architecture.md) for ownership, [testing](docs/testing.md) for evidence,
 [compatibility](docs/compatibility.md) for dependency/MSRV changes, and
-[releasing](docs/releasing.md) for publication. Deferred capabilities live in the
+[releasing](docs/releasing.md) for publication, and the [docs site](docs/docs-site.md) for the user
+guide at joshka.net/ratatui-diff. Deferred capabilities live in the
 [roadmap](docs/roadmap.md).
 
 Use jj, with a new described change for each independent review unit. Never create worktrees. Run

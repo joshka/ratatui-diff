@@ -1,0 +1,21 @@
+{
+  "name": "ratatui-diff-docs",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.11.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "astro build",
+    "check": "astro check",
+    "dev": "astro dev",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/check": "0.9.10",
+    "@astrojs/starlight": "0.42.5",
+    "astro": "7.3.5",
+    "typescript": "6.0.3"
+  }
+}

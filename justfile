@@ -48,3 +48,13 @@ appearance:
     cargo build --example viewer --locked
     python3 scripts/capture-appearance.py
     pandoc docs/appearance.md --standalone --embed-resources --resource-path=docs:. --css=scripts/appearance.css --lua-filter=scripts/color-swatches.lua --metadata pagetitle="Choosing a diff presentation" --output=media/appearance.html
+# Capture site screenshots from the tapes, then check and build the docs site into site/dist.
+site: site-media
+    python3 scripts/check-site-snippets.py
+    cd site && pnpm install --frozen-lockfile && pnpm check && pnpm build
+    python3 scripts/site-media.py --check site/dist
+site-media:
+    python3 scripts/site-media.py
+# Serve the docs site with live reload; run `just site-media` first for screenshots.
+site-dev:
+    cd site && pnpm install --frozen-lockfile && pnpm dev
