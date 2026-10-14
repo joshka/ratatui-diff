@@ -245,7 +245,7 @@ fn capture(
         terminal.draw(|frame| frame.render_stateful_widget(widget, frame.area(), &mut state))?;
     }
     loop {
-        if let Event::Key(key) = event::read()?
+        if let Some(key) = event::read()?.as_key_press_event()
             && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
         {
             return Ok(());
@@ -399,7 +399,7 @@ fn run(
             update_pointer_selection(&document, &mut state, mouse.column, mouse.row, mouse.kind);
             copy_preview = None;
         }
-        if let Event::Key(key) = event {
+        if let Some(key) = event.as_key_press_event() {
             if editing_search {
                 match key.code {
                     KeyCode::Enter => {
@@ -502,8 +502,8 @@ fn run(
                     copy_preview = None;
                     pointer = None;
                 }
-                KeyCode::Down | KeyCode::Char('j') => state.scroll_lines(1),
-                KeyCode::Up | KeyCode::Char('k') => state.scroll_lines(-1),
+                KeyCode::Char('j') | KeyCode::Down => state.scroll_lines(1),
+                KeyCode::Char('k') | KeyCode::Up => state.scroll_lines(-1),
                 KeyCode::Left => state.scroll_horizontal(-4),
                 KeyCode::Right => state.scroll_horizontal(4),
                 KeyCode::PageDown => state.scroll_pages(1),

@@ -10,5 +10,6 @@ an abstraction for performance. Keep maintenance-only dependency updates separat
 MSRV, trait, and other consumer-visible changes.
 
 Match `rustfmt.toml`, including nightly import grouping and comment formatting. Assign a multiline
-receiver to a local variable before chaining methods. Use imperative jj summaries of at most 50
-characters, with optional bodies wrapped at 72 columns.
+receiver to a local variable before chaining methods. In key-binding matches, put the
+`KeyCode::Char` variant first in each arm so the characters line up down the column. Use imperative
+jj summaries of at most 50 characters, with optional bodies wrapped at 72 columns.
