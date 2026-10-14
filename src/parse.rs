@@ -6,18 +6,23 @@ use crate::{DiffDocument, DiffError, DiffFile, DiffLine, Hunk, LineKind};
 impl DiffDocument {
     /// Parse standard unified patches or Git's two-way patch output.
     ///
-    /// Empty input is an empty document. Combined merge diffs are rejected. Binary
-    /// changes are summaries; this library never applies patches or decompresses payloads.
+    /// Each `diff --git` section is read as Git's extended format; other sections are read as plain
+    /// unified diffs, which covers Mercurial, Subversion, and `diff -u` output. Commit or mail
+    /// headers before the first Git section are skipped, so `git show`, `git format-patch`, and
+    /// `jj show --git` output parse directly. Empty input is an empty document. Context and
+    /// combined merge diffs are rejected. Binary changes are summaries; this library never applies
+    /// patches or decompresses payloads.
     ///
-    /// Extended headers and paths are retained for display. CRLF payload endings and missing final
-    /// newlines are preserved; only lines present in the patch are available for navigation.
-    /// Parsing also validates the model and prepares missing highlights via [`Self::new`].
+    /// Extended headers and paths, including any `a/` and `b/` prefixes, are retained for display.
+    /// CRLF payload endings and missing final newlines are preserved; only lines present in the
+    /// patch are available for navigation. Parsing also validates the model and prepares
+    /// missing highlights via [`Self::new`].
     ///
     /// # Errors
     ///
-    /// Returns [`DiffError`] for malformed patches, unsupported combined merge diffs, or invalid
-    /// source structure. Parser positions refer to bytes in the original input, before header
-    /// normalization. Validation errors may have no offset.
+    /// Returns [`DiffError`] for malformed patches, unsupported context or combined diffs, or
+    /// invalid source structure. Parser positions refer to bytes in the original input, before
+    /// header normalization. Validation errors may have no offset.
     ///
     /// # Example
     ///
@@ -38,6 +43,10 @@ impl DiffDocument {
         let mut offset = 0;
         let mut chunks = Vec::new();
         let mut chunk_start = 0;
+        let mut previous = (0, "");
+        // Text before the first Git section is a preamble (commit or mail headers) unless it
+        // holds a hunk of its own.
+        let mut preamble = true;
         for line in input.split_inclusive('\n') {
             if line.starts_with("diff --cc ")
                 || line.starts_with("diff --combined ")
@@ -48,10 +57,23 @@ impl DiffDocument {
                     message: "combined merge diffs are unsupported".into(),
                 });
             }
-            if line.starts_with("diff --git ") && offset > chunk_start {
-                chunks.push((chunk_start, &input[chunk_start..offset]));
-                chunk_start = offset;
+            if previous.1.starts_with("*** ") && line.starts_with("--- ") {
+                return Err(DiffError {
+                    offset: Some(previous.0),
+                    message: "context diffs are unsupported".into(),
+                });
             }
+            if line.starts_with("@@ ") {
+                preamble = false;
+            }
+            if line.starts_with("diff --git ") {
+                if offset > chunk_start && !preamble {
+                    chunks.push((chunk_start, &input[chunk_start..offset]));
+                }
+                chunk_start = offset;
+                preamble = false;
+            }
+            previous = (offset, line);
             offset += line.len();
         }
         chunks.push((chunk_start, &input[chunk_start..]));

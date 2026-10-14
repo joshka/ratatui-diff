@@ -35,7 +35,7 @@ let document = DiffDocument::compare(old, new, usize::MAX);
 
 Identical inputs produce a document with no hunks.
 
-## Parse a Git patch
+## Parse a patch
 
 ```rust
 use ratatui_diff::DiffDocument;
@@ -45,9 +45,21 @@ let document = DiffDocument::parse(patch)?;
 assert_eq!(document.files().len(), 1);
 ```
 
-`parse` accepts unified diffs and multi-file `git diff` output, including renames, copies, created
-and deleted files, binary files, and metadata-only changes. Parse errors report byte offsets when
-available. Combined merge diffs are rejected.
+`parse` accepts unified diffs and Git's extended format, including renames, copies, created and
+deleted files, binary files, and metadata-only changes. Each `diff --git` section is read as Git
+output; other sections are read as plain unified diffs. Parse errors report byte offsets when
+available.
+
+| Source                                        | Accepted input                                           |
+| --------------------------------------------- | -------------------------------------------------------- |
+| Git                                           | `git diff`, `git show`, `git log -p`, `git format-patch` |
+| jj                                            | `jj diff --git`, `jj show --git`                         |
+| Mercurial, Subversion, `diff -u`              | Their unified output                                     |
+| Context (`diff -c`), normal, or combined diff | Rejected                                                 |
+
+Commit and mail headers before the first Git section are skipped. jj's default color-words output is
+a display format rather than a patch, so pass `--git`. Paths are kept as written, so Git-style `a/`
+and `b/` prefixes remain in `DiffFile` paths.
 
 A patch only contains the lines it was generated with. The widget shows omitted regions as
 unavailable rather than inventing them, and selection and search never cross those gaps. If your
