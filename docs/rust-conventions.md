@@ -11,5 +11,7 @@ MSRV, trait, and other consumer-visible changes.
 
 Match `rustfmt.toml`, including nightly import grouping and comment formatting. Assign a multiline
 receiver to a local variable before chaining methods. In key-binding matches, put the
-`KeyCode::Char` variant first in each arm so the characters line up down the column. Use imperative
-jj summaries of at most 50 characters, with optional bodies wrapped at 72 columns.
+`KeyCode::Char` variant first in each arm so the characters line up down the column. In examples,
+bind a widget to a local variable and call `render` on it rather than rendering an inline
+`(&Widget::new(..))` reference. Use imperative jj summaries of at most 50 characters, with optional
+bodies wrapped at 72 columns.

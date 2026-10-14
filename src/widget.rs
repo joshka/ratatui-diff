@@ -357,7 +357,8 @@ struct LayoutKey {
 /// let area = Rect::new(0, 0, 40, 2);
 /// let mut buffer = Buffer::empty(area);
 /// let mut state = DiffState::new();
-/// (&Diff::new(&document)).render(area, &mut buffer, &mut state);
+/// let diff = Diff::new(&document);
+/// diff.render(area, &mut buffer, &mut state);
 /// state.end();
 /// let source = state.source_at(state.offset(), Side::Old).unwrap();
 /// assert_eq!(source.line, 1);
