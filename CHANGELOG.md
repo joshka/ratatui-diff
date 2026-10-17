@@ -2,5 +2,46 @@
 
 ## Unreleased
 
+## [0.1.0](https://github.com/joshka/ratatui-diff/compare/v0.0.0...v0.1.0) - 2026-10-17
+
+### Other
+
+- Use ratatui::run in the crate example
+- Bind the widget before rendering in examples
+- Use Event::as_key_press_event in example hosts
+- Add an Astro/Starlight docs site for GitHub Pages
+- Keep file headers visible while scrolling
+- Measure optional syntax costs
+- Profile folding and resize costs
+- Add optional syntax highlighting
+- Integrate efficient glyph and selection storage
+- Reduce prepared glyph memory
+- Validate selections without copying text
+- Integrate related split line alignment
+- Improve pairing in split diff views
+- Measure diff preparation and rendering costs
+- Show colored diff statistics and totals
+- Verify file folding terminal interactions
+- Preserve the viewport during file expansion
+- Integrate file folding contracts and UX
+- Add file folding presentation and controls
+- Design retained context folding contracts
+- Design context folding presentation
+- Expand whitespace indentation fixture
+- Verify combined diff interactions
+- Clarify diff interaction feedback
+- Expand interactive diff fixtures
+- Add diff search and match navigation
+- Add source selection and text extraction
+- Map display cells to source positions
+- Polish diff gutters and wrapped continuations
+- Add Aardvark Ink theme and visual guide
+- Clarify usage documentation and API contracts ([#2](https://github.com/joshka/ratatui-diff/pull/2))
+- Show captioned diff views in README
+- Improve diff demo presentation
+- Set up project guidance and automation
+- Add navigable Ratatui diff widget
+- Initialize Rust library
+
 Initial unified and split diff widget, patch/text/structured input, word highlights, Unicode-aware
 wrapping, themes, whitespace controls, and indexed viewport navigation.
