@@ -6,10 +6,11 @@ application toolbars and key-binding footers out of documentation images.
 
 ## Reproduce the guide
 
-The checked-in tapes pin the complete Aardvark Ink terminal palette. Captures were reviewed with
-Betamax 0.1.21. Install that version and JetBrains Mono; `pandoc` renders the standalone local
-guide. The source images and generated HTML stay in ignored `media/`. Publish reviewed images
-separately using the [release workflow](releasing.md).
+The checked-in tapes pin the complete Aardvark Ink terminal palette. Captures were first reviewed
+with Betamax 0.1.21; CI and the docs site now replay them with the pinned 0.1.22. Install that
+version and JetBrains Mono; `pandoc` renders the standalone local guide. The source images and
+generated HTML stay in ignored `media/`. Publish reviewed images separately using the
+[release workflow](releasing.md).
 
 ```sh
 just appearance

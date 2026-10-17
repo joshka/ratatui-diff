@@ -6,9 +6,7 @@ terminal acceptance, review media, and documentation. The application runs in a 
 screenshots are captured output, not mockups.
 
 The reusable workflow is below; [scenario details](#ratatui-diff-scenario) describe this library's
-API and fixture. Cross-repository placement in Betamax's documentation is coordinated by the
-ratatui-diff planning task. This document is the handoff, not a claim that Betamax's site is
-updated.
+API and fixture.
 
 ## Result and caller configuration
 
@@ -154,9 +152,10 @@ upload the corresponding LFS objects before publication. The documentation job c
 magic and the SHA-256 values in `media.json`. A successful Markdown or Rustdoc build alone would not
 prove that image bytes were hydrated.
 
-When moving this walkthrough into Betamax's site, preserve the LFS rules and run the same guard
-against copied build-output media as well as checkout files. That site integration is a separate
-handoff; this repository has no site build for these Markdown guides.
+When copying this walkthrough or its media into another site, preserve the LFS rules. The guard
+above checks checkout files only; for a built site, run
+`python3 scripts/site-media.py --check <dist>`, as this repository's [docs site](docs-site.md) does
+for its copies of these images.
 
 ## Ratatui-diff scenario
 

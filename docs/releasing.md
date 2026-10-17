@@ -26,8 +26,9 @@ requirement and narrow dependency-audit exception. See [syntax styling](syntax-s
 
 ## Hosted readiness audit
 
-Read-only GitHub API inspection on October 9, 2026 found the following. Recheck before release;
-these observations are not permanent guarantees or authorization to change settings.
+Read-only GitHub API and crates.io inspection on October 9, 2026 found the following; a recheck on
+October 17, 2026 found the same state. Recheck before release; these observations are not permanent
+guarantees or authorization to change settings.
 
 | Prerequisite                      | Verified state                                                                  | Required follow-up                                                                                                          |
 | --------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -59,5 +60,5 @@ holds each view for five seconds and hides transitions; captions explain feature
 key bindings.
 
 The [documentation site](docs-site.md) commits no generated images: its workflow replays the tapes
-against the viewer built from the published revision and deploys every push to `main`. A future
+against the viewer built from the same revision and deploys every push to `main`. A future
 ratatui.rs link is outside this repository.

@@ -19,8 +19,8 @@ whitespace-delimited words retain whole-line styling. These bounds protect inter
 from fine-grained adversarial input. They do not bound whole-document comparison time.
 
 `&Diff` implements `StatefulWidget` with a separate `DiffState`. This is the chosen rendering
-contract; a mutable-widget prototype is not planned. Hosts can recreate the widget with current
-presentation options each frame while state retains navigation and reusable layout.
+contract. Hosts can recreate the widget with current presentation options each frame while state
+retains navigation and reusable layout.
 
 The widget owns presentation options; state owns layout and viewport caches. Immutable documents
 carry identities so replacing a document invalidates caches even if its allocation address is

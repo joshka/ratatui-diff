@@ -351,9 +351,9 @@ impl DiffDocument {
     /// Restore a saved collapsed file before drawing any expanded frame:
     ///
     /// ```
-    /// use ratatui_core::buffer::Buffer;
-    /// use ratatui_core::layout::Rect;
-    /// use ratatui_core::widgets::StatefulWidget;
+    /// use ratatui::buffer::Buffer;
+    /// use ratatui::layout::Rect;
+    /// use ratatui::widgets::StatefulWidget;
     /// use ratatui_diff::{Diff, DiffDocument, DiffState};
     ///
     /// let document = DiffDocument::from_text("old\n", "new\n");

@@ -20,6 +20,7 @@ current checkout; a configured release workflow does not establish that this rev
 - Fold files and retained context independently, restore file preferences before the first render,
   and reveal retained search/selection targets explicitly. Folding changes presentation rather than
   source. See [folding controls](folding.md).
+- Keep the current file's header visible while scrolling with `Diff::sticky_file_headers(true)`.
 - Opt into `Diff::show_stats(true)` to reserve one row for supplied text insertion/deletion totals,
   with separate binary and metadata-only counts. Totals survive folding and layout changes; they do
   not estimate binary sizes or missing source.
@@ -39,8 +40,7 @@ source preservation, including syntax. Hosted release prerequisites remain in
 ## Deferred capabilities
 
 These capabilities have no release commitment. Select work from a concrete caller requirement and
-record its evidence and compatibility impact. The mutable-widget prototype remains skipped: the
-chosen contract is `StatefulWidget` with separate state.
+record its evidence and compatibility impact.
 
 | Capability                                           | Why deferred                                             | Revisit when                                                                       |
 | ---------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------- |

@@ -13,11 +13,15 @@ terminal, the event loop, key bindings, and where the source text comes from.
 ## Install
 
 ```sh
-cargo add ratatui-diff
+cargo add ratatui ratatui-diff
 ```
 
-Rendering depends only on `ratatui-core`, so the widget works with any Ratatui backend. The optional
-`syntax` feature adds [syntax colors](../guides/syntax/).
+`ratatui-diff` 0.1 works with Ratatui 0.30, which re-exports the `ratatui-core` 0.1 types the widget
+uses, and needs Rust 1.98 or later. The examples import Ratatui's re-exports, such as
+`ratatui::buffer` and `ratatui::crossterm`, so these two crates are all they need. Rendering depends
+only on `ratatui-core`, so the widget works with any Ratatui backend. The optional `syntax` feature
+adds
+[syntax colors](../guides/syntax/).
 
 ## The three pieces
 
@@ -57,9 +61,9 @@ navigation or hit-testing. Methods called between frames take effect on the next
 Tests and non-interactive code can render directly into a buffer:
 
 ```rust
-use ratatui_core::buffer::Buffer;
-use ratatui_core::layout::Rect;
-use ratatui_core::widgets::StatefulWidget;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::widgets::StatefulWidget;
 use ratatui_diff::{Diff, DiffDocument, DiffState};
 
 let document = DiffDocument::from_text("hello world\n", "hello Rust\n");

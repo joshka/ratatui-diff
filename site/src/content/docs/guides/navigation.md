@@ -21,9 +21,9 @@ Scrolling counts displayed rows, including headers and wrapped continuations. Re
 first: page sizes and row positions come from the last frame.
 
 ```rust
-use ratatui_core::buffer::Buffer;
-use ratatui_core::layout::Rect;
-use ratatui_core::widgets::StatefulWidget;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::widgets::StatefulWidget;
 use ratatui_diff::{Diff, DiffDocument, DiffState, Side, SourcePosition};
 
 let document = DiffDocument::from_text("before\n", "after\n");

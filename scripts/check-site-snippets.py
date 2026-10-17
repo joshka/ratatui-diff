@@ -32,7 +32,7 @@ publish = false
 
 [dependencies]
 ratatui-diff = {{ path = {str(root)!r}, features = ["syntax"] }}
-ratatui-core = "0.1"
+ratatui = "0.30"
 """)
 source = ["#![allow(unused)]"]
 calls = []

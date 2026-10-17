@@ -3,8 +3,8 @@
 //! The documentation site embeds this file as its getting-started example.
 use std::error::Error;
 
-use crossterm::event::{self, KeyCode};
 use ratatui::DefaultTerminal;
+use ratatui::crossterm::event::{self, KeyCode};
 use ratatui_diff::{Diff, DiffDocument, DiffState, DiffTheme, ViewMode};
 
 const OLD: &str = "\
