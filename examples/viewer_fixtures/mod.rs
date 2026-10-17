@@ -14,8 +14,9 @@ pub(super) fn load(name: &str) -> Result<DiffDocument, Box<dyn Error>> {
         "unicode-text" => unicode_text(),
         "whitespace" => whitespace(),
         "multi-file" => multi_file(),
+        "patch" => Ok(DiffDocument::parse(include_str!("../fixtures/show.patch"))?),
         _ => Err(format!(
-            "unknown fixture: {name}; choose showcase, context, files, alignment, unicode, unicode-text, whitespace, or multi-file"
+            "unknown fixture: {name}; choose showcase, context, files, alignment, unicode, unicode-text, whitespace, multi-file, patch, or syntax"
         )
         .into()),
     }
@@ -260,6 +261,20 @@ mod tests {
         assert!(document.files().iter().all(|file| file.hunks.len() == 3));
         let document = load("unicode-text").unwrap();
         assert_eq!(document.files().len(), 1);
+        let document = load("patch").unwrap();
+        let paths: Vec<_> = document
+            .files()
+            .iter()
+            .map(|file| (file.old_path.as_deref(), file.new_path.as_deref()))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                (Some("src/client.rs"), Some("src/http.rs")),
+                (Some("src/lib.rs"), Some("src/lib.rs")),
+                (None, Some("src/retry.rs")),
+            ]
+        );
         let document = load("unicode").unwrap();
         let lines = &document.files()[0].hunks[0].lines;
         assert!(lines.iter().any(|line| line.text.contains("cafe\u{301}")));

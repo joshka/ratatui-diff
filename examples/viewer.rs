@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if arguments.as_slice() == ["--help"] {
         println!(
-            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nUse --sticky-headers to keep the current file header visible.\n\nFixtures: showcase (default), context, files, alignment, unicode, unicode-text, whitespace, multi-file\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
+            "usage: viewer [--fixture NAME] [--aardvark-ink | --capture VARIANT | --measure VARIANT COLUMNS]\n\nUse --sticky-headers to keep the current file header visible.\n\nFixtures: showcase (default), context, files, alignment, unicode, unicode-text, whitespace, multi-file, patch, syntax\nCapture variants: unified, split, wrapped, whitespace, lines-only, no-numbers, mono"
         );
         #[cfg(feature = "syntax")]
         println!("Syntax: --syntax THEME [--syntax-contrast], --syntax-licenses; h toggles prepared syntax.
