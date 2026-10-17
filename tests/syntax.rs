@@ -721,3 +721,24 @@ fn contrast(fg: (u8, u8, u8), bg: (u8, u8, u8)) -> f64 {
     let b = luminance(bg);
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
+
+#[test]
+fn terminal_palette_themes_are_rejected_and_unlisted() {
+    for name in ["ansi", "base16", "base16-256"] {
+        assert!(matches!(
+            SyntaxHighlighter::bundled(name),
+            Err(SyntaxError::UnsupportedTheme(theme)) if theme == name
+        ));
+        assert!(SyntaxHighlighter::themes().all(|theme| theme != name));
+    }
+    let document = DiffDocument::from_text("let a = 1;\n", "let a = 2;\n");
+    let input = FileSyntax {
+        file: 0,
+        language: "rs",
+        source: SyntaxSource::Retained,
+    };
+    for name in SyntaxHighlighter::themes() {
+        let highlighter = SyntaxHighlighter::bundled(name).unwrap();
+        assert!(highlighter.prepare(&document, &[input]).is_ok(), "{name}");
+    }
+}
