@@ -9,26 +9,28 @@
 //! Prepare a [`DiffDocument`] once and keep a [`DiffState`] between frames to retain the viewport
 //! and cached layout. Build a [`Diff`] in the draw closure to select presentation options:
 //!
-//! ```
-//! use ratatui::Terminal;
-//! use ratatui::backend::TestBackend;
+//! ```no_run
 //! use ratatui_diff::{Diff, DiffDocument, DiffState, ViewMode};
 //!
 //! let document = DiffDocument::from_text("hello world\n", "hello Rust\n");
 //! let mut state = DiffState::new();
-//! let mut terminal = Terminal::new(TestBackend::new(80, 20))?;
-//! terminal.draw(|frame| {
-//!     let diff = Diff::new(&document).mode(ViewMode::Split);
-//!     frame.render_stateful_widget(&diff, frame.area(), &mut state);
+//! ratatui::run(|terminal| {
+//!     terminal.draw(|frame| {
+//!         let diff = Diff::new(&document).mode(ViewMode::Split);
+//!         frame.render_stateful_widget(&diff, frame.area(), &mut state);
+//!     })?;
+//!     // Call from your PageDown handler, then redraw.
+//!     state.scroll_pages(1);
+//!     Ok::<(), std::io::Error>(())
 //! })?;
-//! // Call from your PageDown handler, then redraw.
-//! state.scroll_pages(1);
-//! # Ok::<(), std::convert::Infallible>(())
+//! # Ok::<(), std::io::Error>(())
 //! ```
 //!
-//! This example uses an in-memory terminal. The draw closure also works with Crossterm or Termion.
-//! The [interactive viewer] includes key bindings, an event loop, and terminal restoration.
+//! [`ratatui::run`] sets up a Crossterm terminal and restores it when the closure returns. The draw
+//! closure works with any Ratatui backend. The [interactive viewer] includes key bindings and an
+//! event loop.
 //!
+//! [`ratatui::run`]: https://docs.rs/ratatui/latest/ratatui/fn.run.html
 //! [interactive viewer]: https://github.com/joshka/ratatui-diff/blob/main/examples/viewer.rs
 //!
 //! # Choose an input
