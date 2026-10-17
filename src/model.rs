@@ -330,7 +330,8 @@ impl DiffDocument {
     /// assert!(state.set_file_expanded(&file, false));
     /// let area = Rect::new(0, 0, 60, 12);
     /// let mut buffer = Buffer::empty(area);
-    /// (&Diff::new(&document)).render(area, &mut buffer, &mut state);
+    /// let diff = Diff::new(&document);
+    /// diff.render(area, &mut buffer, &mut state);
     /// assert!(!state.file_expanded(&file));
     /// assert_eq!(state.row_count(), 1);
     /// ```

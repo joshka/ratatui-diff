@@ -30,7 +30,8 @@ let document = DiffDocument::from_text("before\n", "after\n");
 let area = Rect::new(0, 0, 80, 3);
 let mut buffer = Buffer::empty(area);
 let mut state = DiffState::new();
-(&Diff::new(&document)).render(area, &mut buffer, &mut state);
+let diff = Diff::new(&document);
+diff.render(area, &mut buffer, &mut state);
 assert!(state.scroll_to_source(SourcePosition {
     file: 0,
     side: Side::New,

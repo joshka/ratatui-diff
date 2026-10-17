@@ -3,7 +3,7 @@
 //! The documentation site embeds this file as its getting-started example.
 use std::error::Error;
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, KeyCode};
 use ratatui::DefaultTerminal;
 use ratatui_diff::{Diff, DiffDocument, DiffState, DiffTheme, ViewMode};
 
@@ -39,9 +39,7 @@ fn run(terminal: &mut DefaultTerminal, document: &DiffDocument) -> Result<(), Bo
         terminal.draw(|frame| frame.render_stateful_widget(&diff, frame.area(), &mut state))?;
 
         // The host owns key bindings; navigation methods take effect on the next draw.
-        if let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
+        if let Some(key) = event::read()?.as_key_press_event() {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                 KeyCode::Char('s') => {
@@ -50,8 +48,8 @@ fn run(terminal: &mut DefaultTerminal, document: &DiffDocument) -> Result<(), Bo
                         _ => ViewMode::Unified,
                     }
                 }
-                KeyCode::Down | KeyCode::Char('j') => state.scroll_lines(1),
-                KeyCode::Up | KeyCode::Char('k') => state.scroll_lines(-1),
+                KeyCode::Char('j') | KeyCode::Down => state.scroll_lines(1),
+                KeyCode::Char('k') | KeyCode::Up => state.scroll_lines(-1),
                 KeyCode::PageDown => state.scroll_pages(1),
                 KeyCode::PageUp => state.scroll_pages(-1),
                 KeyCode::Char(']') => state.next_hunk(),
