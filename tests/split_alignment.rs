@@ -23,6 +23,7 @@ fn replacement(old: &[&str], new: &[&str]) -> DiffDocument {
         hunks: vec![Hunk {
             old: 1..old.len() + 1,
             new: 1..new.len() + 1,
+            heading: None,
             lines,
         }],
     }])

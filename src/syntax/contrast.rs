@@ -3,7 +3,7 @@
 use ratatui_core::style::Color;
 use syntect::highlighting::Color as SyntaxColor;
 
-use crate::{DiffTheme, SyntaxError};
+use crate::{ContrastSurface, DiffTheme, SyntaxError};
 
 pub(super) struct Contrast {
     backgrounds: [f64; 5],
@@ -14,11 +14,17 @@ impl Contrast {
         let insert = theme.context.patch(theme.insert);
         let delete = theme.context.patch(theme.delete);
         let surfaces = [
-            ("context", theme.context),
-            ("insertion", insert),
-            ("deletion", delete),
-            ("inserted word", insert.patch(theme.insert_word)),
-            ("deleted word", delete.patch(theme.delete_word)),
+            (ContrastSurface::Context, theme.context),
+            (ContrastSurface::Insertion, insert),
+            (ContrastSurface::Deletion, delete),
+            (
+                ContrastSurface::InsertedWord,
+                insert.patch(theme.insert_word),
+            ),
+            (
+                ContrastSurface::DeletedWord,
+                delete.patch(theme.delete_word),
+            ),
         ];
         let mut backgrounds = [0.0; 5];
         for (index, (surface, style)) in surfaces.into_iter().enumerate() {

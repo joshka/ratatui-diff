@@ -88,8 +88,8 @@ fn non_unified_formats_are_rejected() {
     let context = "*** f\t2026-10-14 10:00:00\n--- f\t2026-10-14 10:01:00\n\
                    ***************\n*** 1 ****\n! old\n--- 1 ----\n! new\n";
     let error = DiffDocument::parse(context).unwrap_err();
-    assert_eq!(error.offset, Some(0));
-    assert!(error.message.contains("context diffs"), "{error}");
+    assert_eq!(error.offset(), Some(0));
+    assert!(error.message().contains("context diffs"), "{error}");
 
     assert!(DiffDocument::parse("1c1\n< old\n---\n> new\n").is_err());
     assert!(DiffDocument::parse("Modified regular file f:\n   1    1: oldnew\n").is_err());
@@ -136,13 +136,13 @@ fn parse_errors_point_at_the_malformed_hunk() {
     let patch = "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n\
                  diff --git a/g b/g\nindex 1..2 100644\n--- a/g\n+++ b/g\n@@ -1,2 +1,2 @@\n-a\n+b\n";
     let error = DiffDocument::parse(patch).unwrap_err();
-    assert_eq!(error.offset, patch.rfind("@@ "));
-    assert_eq!(error.message, "hunk header does not match hunk");
+    assert_eq!(error.offset(), patch.rfind("@@ "));
+    assert_eq!(error.message(), "hunk header does not match hunk");
 
     let plain =
         "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n--- a/g\n+++ b/g\n@@ -1,2 +1,2 @@\n-a\n+b\n";
     assert_eq!(
-        DiffDocument::parse(plain).unwrap_err().offset,
+        DiffDocument::parse(plain).unwrap_err().offset(),
         plain.rfind("@@ ")
     );
 }
@@ -151,6 +151,32 @@ fn parse_errors_point_at_the_malformed_hunk() {
 fn lines_beyond_a_hunk_count_are_rejected() {
     let patch = "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n+extra\n";
     let error = DiffDocument::parse(patch).unwrap_err();
-    assert_eq!(error.offset, patch.find("+extra"));
-    assert!(error.message.contains("more lines"), "{error}");
+    assert_eq!(error.offset(), patch.find("+extra"));
+    assert!(error.message().contains("more lines"), "{error}");
+}
+
+#[test]
+fn hunk_headings_are_kept_and_rendered() {
+    use ratatui_core::buffer::Buffer;
+    use ratatui_core::layout::Rect;
+    use ratatui_core::widgets::StatefulWidget;
+    use ratatui_diff::{Diff, DiffState};
+
+    let patch = "--- a/f\n+++ b/f\n@@ -4 +4 @@ fn retry() {\r\n-a\n+b\n@@ -9 +9 @@\n-c\n+d\n";
+    let document = DiffDocument::parse(patch).unwrap();
+    let hunks = &document.files()[0].hunks;
+    assert_eq!(hunks[0].heading.as_deref(), Some("fn retry() {"));
+    assert_eq!(hunks[1].heading, None);
+
+    let area = Rect::new(0, 0, 40, 5);
+    let mut buffer = Buffer::empty(area);
+    let mut state = DiffState::new();
+    let diff = Diff::new(&document);
+    diff.render(area, &mut buffer, &mut state);
+    let row: String = (0..area.width).map(|x| buffer[(x, 2)].symbol()).collect();
+    assert_eq!(row.trim_end(), "@@ -4,1 +4,1 @@ fn retry() {");
+
+    let mut files = document.files().to_vec();
+    files[0].hunks[0].heading = Some("two\nlines".into());
+    assert!(DiffDocument::new(files).is_err());
 }

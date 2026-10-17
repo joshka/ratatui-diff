@@ -4,8 +4,8 @@ use std::error::Error;
 use std::fmt;
 use std::ops::Range;
 
-/// A source side in a two-way diff.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A source side in a two-way diff, ordered with the original first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Side {
     /// Original source.
     Old,
@@ -15,7 +15,7 @@ pub enum Side {
 }
 
 /// The role of a source line.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LineKind {
     /// Unchanged on both sides.
     Context,
@@ -100,6 +100,11 @@ pub struct Hunk {
     /// Modified line range, start-inclusive and end-exclusive. Empty sides may start at zero.
     pub new: Range<usize>,
 
+    /// Section heading shown after the ranges, such as the enclosing function in Git output.
+    ///
+    /// Patches supply this from the text after the closing `@@`; comparisons leave it empty.
+    pub heading: Option<String>,
+
     /// Context, deleted, and inserted lines in display order; each side is numbered sequentially.
     pub lines: Vec<DiffLine>,
 }
@@ -145,14 +150,8 @@ pub struct DiffDocument {
 /// Invalid input with a byte position when available.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffError {
-    /// Zero-based byte position in the original patch input, when available.
-    ///
-    /// A parser error may point to the start of its file chunk. Errors from structured validation
-    /// have no position, including validation failures encountered while parsing a patch.
-    pub offset: Option<usize>,
-
-    /// Human-readable cause. Display includes `at byte N: ` when an offset is available.
-    pub message: String,
+    offset: Option<usize>,
+    message: String,
 }
 
 impl fmt::Display for DiffError {
@@ -167,10 +166,28 @@ impl fmt::Display for DiffError {
 impl Error for DiffError {}
 impl DiffError {
     pub(crate) fn invalid(message: impl Into<String>) -> Self {
+        Self::at(None, message)
+    }
+
+    pub(crate) fn at(offset: Option<usize>, message: impl Into<String>) -> Self {
         Self {
-            offset: None,
+            offset,
             message: message.into(),
         }
+    }
+
+    /// Zero-based byte position in the original patch input, when available.
+    ///
+    /// Parser errors point to the malformed line, or to the start of its file section when the
+    /// parser reports no position. Errors from structured validation have no position, including
+    /// validation failures encountered while parsing a patch.
+    pub fn offset(&self) -> Option<usize> {
+        self.offset
+    }
+
+    /// Human-readable cause, without the position. Display adds `at byte N: ` when one is known.
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 
@@ -189,7 +206,8 @@ impl DiffDocument {
     /// - Hunk ranges are forward, ordered, and non-overlapping on each side.
     /// - Line kinds, one-based numbers, and hunk counts agree, with sequential numbers per side.
     /// - No source line follows an unterminated line on the same side, even in a later hunk.
-    /// - Line text contains no LF; highlights are ordered, non-overlapping UTF-8 byte ranges.
+    /// - Line text and hunk headings contain no LF; highlights are ordered, non-overlapping UTF-8
+    ///   byte ranges.
     ///
     /// # Example
     ///
@@ -204,6 +222,7 @@ impl DiffDocument {
     ///     hunks: vec![Hunk {
     ///         old: 0..0,
     ///         new: 1..2,
+    ///         heading: None,
     ///         lines: vec![DiffLine::new(LineKind::Insert, None, Some(1), "hello\n")],
     ///     }],
     /// }])?;
@@ -233,6 +252,13 @@ impl DiffDocument {
                 previous = Some((hunk.old.end, hunk.new.end));
                 if hunk.old.end < hunk.old.start || hunk.new.end < hunk.new.start {
                     return Err(DiffError::invalid("reversed hunk range"));
+                }
+                if hunk
+                    .heading
+                    .as_ref()
+                    .is_some_and(|heading| heading.contains('\n'))
+                {
+                    return Err(DiffError::invalid("hunk heading contains newline"));
                 }
 
                 // Hunk bounds constrain cursor advances before addition, preventing overflow.

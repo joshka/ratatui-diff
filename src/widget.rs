@@ -35,7 +35,9 @@ pub enum ViewMode {
 ///
 /// Used by [`DiffState::source_at`] and [`DiffState::scroll_to_source`]. This value is not
 /// validated on construction; a location can refer to a missing file or omitted patch context.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Positions order by file, then side (original first), then line, so hosts can key ordered maps
+/// such as review comments by them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourcePosition {
     /// File index, starting at zero.
     pub file: usize,
@@ -53,7 +55,7 @@ pub struct SourcePosition {
 /// Hit-testing returns whole graphemes; literal search may match part of a grapheme, and rendering
 /// emphasizes every intersecting grapheme.
 /// Public field construction is unchecked; hit-testing returns valid grapheme ranges.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SourceRange {
     /// File, side, and one-based line identity.
     pub position: SourcePosition,
@@ -189,7 +191,10 @@ enum RevealTarget {
 }
 
 /// The semantic region occupying a cell in the last rendered diff viewport.
+///
+/// New regions may be added in minor releases; match with a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HitTest {
     /// A whole-file expansion control. Metadata, hunk headers, and gaps remain [`Self::Header`].
     FileHeader {
@@ -426,7 +431,8 @@ impl DiffState {
     /// A fresh state binds to the first handle's document, allowing initial collapse without an
     /// expanded first frame. Further foreign handles return false until a render rebinds state.
     /// Rendering another document clears file preferences; clones retain their identities.
-    /// Valid unchanged requests return true and leave hit-testing intact. A real change invalidates
+    /// Returns `true` when the handle is accepted, including unchanged requests, which leave
+    /// hit-testing intact. A real change invalidates
     /// mapping until redraw. Collapsing the file at the viewport anchors its retained header;
     /// off-screen changes preserve the current source anchor. Nested context expansion is retained.
     /// Manual collapse cancels pending search and selection reveal so the file stays closed.
@@ -575,8 +581,9 @@ impl DiffState {
 
     /// Set anchor/focus from host keyboard or pointer input.
     ///
-    /// Rejects invalid source boundaries, cross-file/side ranges, and omitted patch context.
-    /// Invalid input leaves the current selection unchanged. Validation borrows source text;
+    /// Returns `true` when the selection was stored. Rejects invalid source boundaries,
+    /// cross-file/side ranges, and omitted patch context by returning `false`; invalid input leaves
+    /// the current selection unchanged. Validation borrows source text;
     /// copying occurs only when extracting it. The selection belongs to `document`; rendering
     /// another document clears it.
     pub fn set_selection(
@@ -601,7 +608,9 @@ impl DiffState {
 
     /// Extend focus using source graphemes and line boundaries; anchor stays fixed.
     ///
-    /// Returns false at a source boundary or missing patch context. Hosts bind their own keys.
+    /// Returns `true` when focus moved. Returns `false` without changes when there is no
+    /// selection, the selection belongs to another document, or focus is at a source boundary or
+    /// missing patch context. Hosts bind their own keys.
     pub fn extend_selection(
         &mut self,
         document: &DiffDocument,
@@ -1210,12 +1219,16 @@ impl<'a> Diff<'a> {
     /// Attach prepared syntax colors without changing layout or interaction state.
     ///
     /// Available with feature `syntax`. Prepare with [`crate::SyntaxHighlighter`] outside drawing;
-    /// attachment only checks document identity and returns
-    /// [`crate::SyntaxError::DocumentMismatch`] for results prepared against another document.
-    /// Clones accept the same results. Syntax adds foreground/bold/italic before word,
-    /// whitespace, search, and selection overlays. Unified context uses the new side without
-    /// old-side fallback. Omit this option to disable syntax, including when a host chooses
-    /// monochrome presentation.
+    /// attachment only checks document identity. Clones accept the same results. Syntax adds
+    /// foreground/bold/italic before word, whitespace, search, and selection overlays. Unified
+    /// context uses the new side without old-side fallback. Omit this option to disable syntax,
+    /// including when a host chooses monochrome presentation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::SyntaxError::DocumentMismatch`] for results prepared against another
+    /// document. Attachment fails rather than ignoring the styles so a stale result is noticed
+    /// when it is attached, not as missing colors later.
     #[cfg(feature = "syntax")]
     pub fn syntax_styles(
         mut self,
@@ -1577,13 +1590,17 @@ impl<'a> Diff<'a> {
                     .new
                     .end
                     .saturating_add(usize::from(source.new.is_empty()));
-                let label = format!(
+                let mut label = format!(
                     "@@ -{},{} +{},{} @@",
                     source.old.start,
                     source.old.len(),
                     source.new.start,
                     source.new.len()
                 );
+                if let Some(heading) = &source.heading {
+                    label.push(' ');
+                    label.push_str(heading);
+                }
                 state.rows.push(header(file, Some(hunk), &label, self.tab));
                 let mut n = 0;
                 let mut hidden = None;

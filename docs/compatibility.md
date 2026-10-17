@@ -9,6 +9,13 @@ This is a pre-1.0 library. Minor releases may change public APIs; patch releases
 behavior. Engine types remain private, while Ratatui rendering contracts are necessarily public.
 Keep dependency requirements as wide as the implemented behavior honestly permits.
 
+Enums that are expected to grow, such as `HitTest`, `SelectionMotion`, `SyntaxSource`,
+`SyntaxLimit`, `SyntaxError`, and `ContrastSurface`, are `#[non_exhaustive]`, so a new variant is
+not a breaking change. Structs that hosts build from literals keep public fields: the document model
+(`DiffFile`, `Hunk`, `DiffLine`), `DiffTheme`, and `SyntaxLimits` support struct update syntax from
+presets and defaults. Adding a field to one of them is breaking and waits for a minor release.
+`DiffError` exposes accessors, so error details can grow without breaking callers.
+
 Input is UTF-8 and two-way unified/Git patch text. Binary payloads remain opaque. Escape sequences
 are displayed visibly. Combined merges, unavailable context retrieval, streaming, and non-UTF-8
 source rendering are deferred in the [roadmap](roadmap.md).

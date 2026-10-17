@@ -90,6 +90,7 @@ impl DiffDocument {
             hunks.push(Hunk {
                 old: old_range,
                 new: new_range,
+                heading: None,
                 lines,
             });
         }
