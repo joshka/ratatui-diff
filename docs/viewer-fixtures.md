@@ -78,6 +78,9 @@ file, parsed with `DiffDocument::parse`. File headers name repository paths: the
 `src/client.rs → src/http.rs` and the edit reads `src/lib.rs`, without Git's `a/` and `b/` prefixes.
 The commit header before the first `diff --git` is skipped rather than shown as metadata.
 
+In a short terminal, press `s`, `w`, then `/`, type `run(`, and press Enter. The match is beside a
+deleted line that wraps to four rows; the view scrolls so the match itself is visible.
+
 ## Reproduce Captures
 
 ```sh
@@ -87,6 +90,7 @@ python3 scripts/capture.py examples/fixtures-unicode-text.tape
 python3 scripts/capture.py examples/fixtures-scrolling.tape
 python3 scripts/capture.py examples/fixtures-whitespace.tape
 python3 scripts/capture.py examples/fixtures-patch.tape
+python3 scripts/capture.py examples/fixtures-patch-search.tape
 ```
 
 The tapes use keyboard input and output waits. PNG images are written under ignored `media/`; keep

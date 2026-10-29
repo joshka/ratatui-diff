@@ -38,7 +38,9 @@ impl SyntaxHighlighter {
     ///
     /// # Errors
     ///
-    /// Returns [`SyntaxError::UnknownTheme`] for names not listed by [`Self::themes`].
+    /// Returns [`SyntaxError::UnknownTheme`] for names not in the bundled set, and
+    /// [`SyntaxError::UnsupportedTheme`] for bundled terminal-palette themes, such as `ansi`, that
+    /// encode palette indexes rather than RGB colors. [`Self::themes`] lists neither.
     ///
     /// ```
     /// use ratatui_diff::{Diff, DiffDocument, FileSyntax, SyntaxHighlighter, SyntaxSource};
@@ -60,10 +62,13 @@ impl SyntaxHighlighter {
     /// ```
     pub fn bundled(theme: &str) -> Result<Self, SyntaxError> {
         let (syntaxes, themes) = bundled();
-        let theme = themes
+        let found = themes
             .get(theme)
-            .ok_or_else(|| SyntaxError::UnknownTheme(theme.to_owned()))?
-            .clone();
+            .ok_or_else(|| SyntaxError::UnknownTheme(theme.to_owned()))?;
+        if terminal_palette(found) {
+            return Err(SyntaxError::UnsupportedTheme(theme.to_owned()));
+        }
+        let theme = found.clone();
         Ok(Self {
             syntaxes,
             theme,
@@ -121,8 +126,22 @@ impl SyntaxHighlighter {
     }
 
     /// Names accepted by [`Self::bundled`], in the bundled set's order.
+    ///
+    /// The first call loads every bundled theme to exclude terminal-palette themes.
     pub fn themes() -> impl Iterator<Item = &'static str> {
-        bundled().1.theme_names()
+        static NAMES: OnceLock<Vec<&'static str>> = OnceLock::new();
+        let names = NAMES.get_or_init(|| {
+            let themes = &bundled().1;
+            themes
+                .theme_names()
+                .filter(|name| {
+                    themes
+                        .get(name)
+                        .is_some_and(|theme| !terminal_palette(theme))
+                })
+                .collect()
+        });
+        names.iter().copied()
     }
 
     /// Bundled language names; extensions such as `rs` are also accepted by preparation.
@@ -366,6 +385,15 @@ impl SyntaxHighlighter {
     }
 }
 
+/// Whether a theme encodes terminal palette indexes: its colors use alpha 0 for an indexed color
+/// and 1 for the terminal default, never an RGB alpha.
+fn terminal_palette(theme: &Theme) -> bool {
+    std::iter::once(theme.settings.foreground)
+        .chain(theme.scopes.iter().map(|item| item.style.foreground))
+        .flatten()
+        .all(|color| color.a <= 1)
+}
+
 fn bundled() -> &'static (SyntaxSet, LazyThemeSet) {
     static ASSETS: OnceLock<(SyntaxSet, LazyThemeSet)> = OnceLock::new();
     ASSETS.get_or_init(|| {
@@ -604,6 +632,8 @@ impl fmt::Display for ContrastSurface {
 pub enum SyntaxError {
     /// A bundled theme name was not found.
     UnknownTheme(String),
+    /// A bundled theme encodes terminal palette indexes instead of RGB colors.
+    UnsupportedTheme(String),
     /// A selected file's grammar token was not found.
     UnknownLanguage {
         /// Zero-based document file index.
@@ -651,6 +681,12 @@ impl fmt::Display for SyntaxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownTheme(name) => write!(f, "unknown syntax theme: {name}"),
+            Self::UnsupportedTheme(name) => {
+                write!(
+                    f,
+                    "syntax theme {name} uses terminal palette colors, not RGB"
+                )
+            }
             Self::UnknownLanguage { file, language } => {
                 write!(f, "unknown language {language:?} for file {file}")
             }

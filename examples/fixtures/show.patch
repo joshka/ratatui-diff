@@ -15,7 +15,7 @@ index 5d1e2c3..8a9b0c1 100644
  use crate::retry::Backoff;
  
 -pub fn fetch(url: &str) -> Response {
--    send(url)
+-    send(url) // TODO: retry with exponential backoff and jitter once requests can be cancelled
 +pub fn fetch(url: &str, backoff: &Backoff) -> Response {
 +    backoff.run(|| send(url))
  }

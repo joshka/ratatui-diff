@@ -244,12 +244,18 @@ impl DiffDocument {
             let mut new_finished = false;
             let mut previous = None;
             for hunk in &mut file.hunks {
+                // An empty range sits after the line it names, so `3..3` follows line 3.
+                let after = |range: &Range<usize>| {
+                    let shift = usize::from(range.is_empty());
+                    range.start.saturating_add(shift)..range.end.saturating_add(shift)
+                };
+                let (old, new) = (after(&hunk.old), after(&hunk.new));
                 if let Some((old_end, new_end)) = previous
-                    && (hunk.old.start < old_end || hunk.new.start < new_end)
+                    && (old.start < old_end || new.start < new_end)
                 {
                     return Err(DiffError::invalid("overlapping or unordered hunks"));
                 }
-                previous = Some((hunk.old.end, hunk.new.end));
+                previous = Some((old.end, new.end));
                 if hunk.old.end < hunk.old.start || hunk.new.end < hunk.new.start {
                     return Err(DiffError::invalid("reversed hunk range"));
                 }

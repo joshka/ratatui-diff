@@ -511,3 +511,113 @@ fn unified_context_has_one_continuation_cue_for_both_source_numbers() {
     assert_eq!(state.source_at(3, Side::Old).unwrap().line, 1);
     assert_eq!(state.source_at(3, Side::New).unwrap().line, 1);
 }
+
+#[test]
+fn search_reveal_in_split_wrap_lands_on_the_match() {
+    let old = format!("{}\n", "o".repeat(200));
+    let document = DiffDocument::compare(&old, "NEEDLE\n", 3);
+    let widget = Diff::new(&document).mode(ViewMode::Split).wrap(true);
+    let mut state = DiffState::new();
+    render(&widget, &mut state, 30, 6);
+    state.set_search(&document, "NEEDLE", Some(Side::New));
+    assert!(state.next_match());
+    let buffer = render(&widget, &mut state, 30, 6);
+    assert!(text(&buffer).contains("NEEDLE"), "{}", text(&buffer));
+}
+
+#[test]
+fn horizontal_scroll_reaches_line_ends_before_a_trailing_header_file() {
+    let old = format!("{}A\n", "a".repeat(100));
+    let new = format!("{}B\n", "a".repeat(100));
+    let mut files = DiffDocument::compare(&old, &new, 3).files().to_vec();
+    files.push(DiffFile {
+        old_path: Some("image.png".into()),
+        new_path: Some("image.png".into()),
+        metadata: vec![],
+        binary: true,
+        hunks: vec![],
+    });
+    let document = DiffDocument::new(files).unwrap();
+    for mode in [ViewMode::Unified, ViewMode::Split] {
+        let widget = Diff::new(&document).mode(mode);
+        let mut state = DiffState::new();
+        render(&widget, &mut state, 40, 8);
+        state.scroll_horizontal(10_000);
+        let buffer = render(&widget, &mut state, 40, 8);
+        assert!(text(&buffer).contains('B'), "{mode:?}\n{}", text(&buffer));
+    }
+}
+
+#[test]
+fn resizing_and_mode_changes_keep_a_hunk_header_at_the_top() {
+    let old: String = (1..=200).map(|n| format!("line {n}\n")).collect();
+    let new = old
+        .replace("line 10\n", "changed 10\n")
+        .replace("line 60\n", "changed 60\n")
+        .replace("line 120\n", "changed 120\n");
+    let document = DiffDocument::compare(&old, &new, 3);
+    let mut state = DiffState::new();
+    let top = |buffer: &Buffer| text(buffer).lines().next().unwrap_or_default().to_owned();
+    render(&Diff::new(&document), &mut state, 40, 10);
+    state.next_hunk();
+    state.next_hunk();
+    let buffer = render(&Diff::new(&document), &mut state, 40, 10);
+    assert!(top(&buffer).starts_with("@@ -57"), "{}", top(&buffer));
+    let buffer = render(&Diff::new(&document), &mut state, 50, 10);
+    assert!(top(&buffer).starts_with("@@ -57"), "{}", top(&buffer));
+    let split = Diff::new(&document).mode(ViewMode::Split);
+    let buffer = render(&split, &mut state, 50, 10);
+    assert!(top(&buffer).starts_with("@@ -57"), "{}", top(&buffer));
+}
+
+#[test]
+fn file_labels_fit_displayed_escapes_and_tabs() {
+    let mut files = DiffDocument::compare("a\n", "b\n", 3).files().to_vec();
+    files[0].old_path = Some("dir\t\t\tname\u{1b}\u{1b}/file.rs".into());
+    files[0].new_path = files[0].old_path.clone();
+    let document = DiffDocument::new(files).unwrap();
+    let mut state = DiffState::new();
+    let buffer = render(&Diff::new(&document), &mut state, 30, 3);
+    let header = text(&buffer).lines().next().unwrap_or_default().to_owned();
+    assert!(header.trim_end().ends_with("· +1 −1"), "{header}");
+    assert!(header.contains('…'), "{header}");
+}
+
+#[test]
+fn huge_tab_widths_are_clamped() {
+    let document = DiffDocument::compare("\tx\n", "\ty\n", 3);
+    let mut state = DiffState::new();
+    let widget = Diff::new(&document).tab_width(usize::MAX);
+    let buffer = render(&widget, &mut state, 80, 4);
+    assert!(text(&buffer).contains('y'));
+}
+
+#[test]
+fn insertions_after_a_line_must_follow_hunks_containing_it() {
+    let insert = Hunk {
+        old: 3..3,
+        new: 4..5,
+        heading: None,
+        lines: vec![DiffLine::new(LineKind::Insert, None, Some(4), "new\n")],
+    };
+    let containing = Hunk {
+        old: 3..4,
+        new: 3..4,
+        heading: None,
+        lines: vec![DiffLine::new(
+            LineKind::Context,
+            Some(3),
+            Some(3),
+            "three\n",
+        )],
+    };
+    let file = |hunks| DiffFile {
+        old_path: Some("f".into()),
+        new_path: Some("f".into()),
+        metadata: vec![],
+        binary: false,
+        hunks,
+    };
+    assert!(DiffDocument::new(vec![file(vec![containing.clone(), insert.clone()])]).is_ok());
+    assert!(DiffDocument::new(vec![file(vec![insert, containing])]).is_err());
+}

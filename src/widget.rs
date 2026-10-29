@@ -155,30 +155,33 @@ impl FileSummary {
         }
     }
 
-    fn label(&self, expanded: bool, width: usize) -> String {
+    /// Fit the label to `width` cells, measuring the path as it is displayed, after tab stops,
+    /// control escapes, and zero-width markers.
+    fn label(&self, expanded: bool, width: usize, tab: usize) -> String {
         let disclosure = if expanded { '▾' } else { '▸' };
         let suffix = format!(" · {}", self.changes);
         let path_width = width.saturating_sub(2 + suffix.width());
         if path_width == 0 {
             return format!("{disclosure} {}", self.changes);
         }
-        let path = if self.path.width() <= path_width {
-            self.path.clone()
-        } else {
-            let mut path = String::new();
-            let mut used = 0;
-            for grapheme in self.path.graphemes(true) {
-                let cells = grapheme.width();
-                if used + cells > path_width.saturating_sub(1) {
-                    break;
-                }
-                path.push_str(grapheme);
-                used += cells;
-            }
-            path.push('…');
-            path
-        };
-        format!("{disclosure} {path}{suffix}")
+        let prefix = format!("{disclosure} {}", self.path);
+        let shown = content(
+            &DiffLine::new(LineKind::Context, None, None, &prefix),
+            false,
+            tab,
+        );
+        if shown.width <= 2 + path_width {
+            return format!("{prefix}{suffix}");
+        }
+        // Keep whole graphemes whose every display cell fits before the ellipsis.
+        let limit = 2 + path_width - 1;
+        let end = shown
+            .glyphs
+            .iter()
+            .find(|glyph| glyph.column + glyph.width > limit)
+            .and_then(|glyph| glyph.bytes.as_ref())
+            .map_or(prefix.len(), |bytes| bytes.start);
+        format!("{}…{suffix}", &prefix[..end])
     }
 }
 
@@ -771,18 +774,22 @@ impl DiffState {
         };
         let g = glyph.and_then(|n| content.glyphs.get(n));
         let wrapped = self.key.is_some_and(|k| k.wrap);
+        // Search only this row's segments: in split view the shorter pane's continuation rows
+        // carry empty ranges, so glyph order is not monotonic across the whole screen.
         let target = if let Some(glyph) = glyph
             && wrapped
         {
-            self.screen.partition_point(|s| {
-                s.row < row_index
-                    || (s.row == row_index
-                        && if right {
-                            s.right.end <= glyph
-                        } else {
-                            s.left.end <= glyph
-                        })
-            })
+            self.screen[first..]
+                .iter()
+                .take_while(|s| s.row == row_index)
+                .position(|s| {
+                    if right {
+                        s.right.contains(&glyph)
+                    } else {
+                        s.left.contains(&glyph)
+                    }
+                })
+                .map_or(first, |n| first + n)
         } else {
             first
         };
@@ -1376,9 +1383,10 @@ impl<'a> Diff<'a> {
 
     /// Set tab stops in terminal cells, measured from the start of each unwrapped source line.
     ///
-    /// Defaults to four; zero is clamped to one. The gutter does not contribute to tab alignment.
+    /// Defaults to four; values are clamped to `1..=64`, so one tab cannot allocate an unbounded
+    /// number of cells. The gutter does not contribute to tab alignment.
     pub fn tab_width(mut self, width: usize) -> Self {
-        self.tab = width.max(1);
+        self.tab = width.clamp(1, 64);
         self
     }
 
@@ -1436,23 +1444,46 @@ impl<'a> Diff<'a> {
         }
         state.folds_dirty = false;
 
-        // Screen offsets change with wrapping or mode; a source location survives both.
+        // Width changes reuse glyphs and alignment but still rebuild wrapped-row indexes.
+        let rebuild_rows = state.key.is_none_or(|previous| {
+            previous.document != key.document
+                || previous.mode != key.mode
+                || previous.whitespace != key.whitespace
+                || previous.tab != key.tab
+                || previous.context != key.context
+        });
+
+        // Screen offsets change with wrapping or mode; a source location survives both. Header
+        // rows keep their own position: by logical row when rows survive, otherwise by hunk, or
+        // by the first source line below them in the same file.
         let same_document = state.key.is_some_and(|k| k.document == key.document);
+        let mut anchor_row = None;
         let anchor = if same_document {
-            let top = state
-                .screen
-                .get(state.offset)
-                .map(|screen| &state.rows[screen.row]);
-            if let Some(row) = top.filter(|row| row.file_header) {
-                Some(RevealTarget::File(row.file))
-            } else {
-                (state.offset..state.screen.len())
-                    .find_map(|n| {
-                        state
-                            .source_at(n, Side::Old)
-                            .or_else(|| state.source_at(n, Side::New))
+            let top = state.screen.get(state.offset).map(|screen| screen.row);
+            match top.map(|n| &state.rows[n]) {
+                Some(row) if row.file_header => Some(RevealTarget::File(row.file)),
+                Some(row) if row.header && !rebuild_rows => {
+                    anchor_row = top;
+                    None
+                }
+                Some(row) if row.header && row.fold.is_none() && row.hunk.is_some() => {
+                    row.hunk.map(|hunk| RevealTarget::Hunk {
+                        file: row.file,
+                        hunk,
                     })
-                    .map(RevealTarget::Source)
+                }
+                row => {
+                    let file = row.map(|row| row.file);
+                    (state.offset..state.screen.len())
+                        .take_while(|&n| Some(state.rows[state.screen[n].row].file) == file)
+                        .find_map(|n| {
+                            state
+                                .source_at(n, Side::Old)
+                                .or_else(|| state.source_at(n, Side::New))
+                        })
+                        .map(RevealTarget::Source)
+                        .or(file.map(RevealTarget::File))
+                }
             }
         } else {
             None
@@ -1464,14 +1495,6 @@ impl<'a> Diff<'a> {
         state.old_sources.clear();
         state.new_sources.clear();
 
-        // Width changes reuse glyphs and alignment but still rebuild wrapped-row indexes.
-        let rebuild_rows = state.key.is_none_or(|previous| {
-            previous.document != key.document
-                || previous.mode != key.mode
-                || previous.whitespace != key.whitespace
-                || previous.tab != key.tab
-                || previous.context != key.context
-        });
         if rebuild_rows {
             if state.key.is_none_or(|previous| {
                 previous.document != key.document || previous.context != key.context
@@ -1485,8 +1508,13 @@ impl<'a> Diff<'a> {
         // Replacing the document resets navigation; resizing retains the old source anchor.
         state.key = Some(key);
         state.offset = if same_document { old_offset } else { 0 };
-        let target = state.pending.take().or(anchor);
-        match target {
+        let pending = state.pending.take();
+        if pending.is_none()
+            && let Some(row) = anchor_row
+        {
+            state.offset = state.screen.partition_point(|screen| screen.row < row);
+        }
+        match pending.or(anchor) {
             Some(RevealTarget::Source(position)) => {
                 let index = match position.side {
                     Side::Old => &state.old_sources,
@@ -1553,7 +1581,7 @@ impl<'a> Diff<'a> {
                 document: self.document.id,
             });
             let summary = FileSummary::new(source);
-            let label = summary.label(!state.collapsed_files.contains(&file), usize::MAX);
+            let label = summary.label(!state.collapsed_files.contains(&file), usize::MAX, self.tab);
             state.file_summaries.push(summary);
             let mut file_header = header(file, None, &label, self.tab);
             file_header.file_header = true;
@@ -1753,6 +1781,7 @@ impl<'a> Diff<'a> {
                 let label = state.file_summaries[row.file].label(
                     !state.collapsed_files.contains(&row.file),
                     usize::from(area.width),
+                    self.tab,
                 );
                 row.left = header(row.file, None, &label, self.tab).left;
             }
@@ -1772,6 +1801,11 @@ impl<'a> Diff<'a> {
                 row.left = header(row.file, row.hunk, &label, self.tab).left;
             }
         }
+        // Horizontal scrolling and reveal measure the source pane, never a full-width header.
+        state.content_width = self
+            .pane_width(area.width, false)
+            .saturating_sub(self.gutter_width(state.digits, false))
+            .max(1);
         let mut folded_screen = 0;
         let mut file_screen = 0;
         for (n, row) in state.rows.iter().enumerate() {
@@ -1813,7 +1847,6 @@ impl<'a> Diff<'a> {
                 .pane_width(area.width, row.header)
                 .saturating_sub(self.gutter_width(state.digits, row.header))
                 .max(1);
-            state.content_width = width;
             state.max_width = state
                 .max_width
                 .max(row.left.width)
