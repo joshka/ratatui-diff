@@ -54,8 +54,8 @@ assert_eq!(document.files().len(), 1);
 ```
 
 A patch displays only its supplied changes and context. Binary changes appear as
-summaries. Combined merge diffs are rejected. Source content retains CRLF and final-newline
-differences; control characters are displayed as visible text.
+summaries. Context and combined merge diffs are rejected. Source content retains CRLF and
+final-newline differences; control characters are displayed as visible text.
 
 ## Configure appearance
 
