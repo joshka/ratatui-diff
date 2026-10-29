@@ -67,6 +67,17 @@ cargo run --example viewer --locked -- --fixture whitespace --aardvark-ink
 1. Press `v`, Down, End, and `c`. Inspect escaped tabs and CR in the copy preview. The preview is
    display feedback; the example does not write to the system clipboard. Press `q` to quit.
 
+## Parsed Git Output
+
+```sh
+cargo run --example viewer --locked -- --fixture patch --aardvark-ink
+```
+
+The fixture is `examples/fixtures/show.patch`, a `git show` commit with a rename, an edit, and a new
+file, parsed with `DiffDocument::parse`. File headers name repository paths: the rename reads
+`src/client.rs → src/http.rs` and the edit reads `src/lib.rs`, without Git's `a/` and `b/` prefixes.
+The commit header before the first `diff --git` is skipped rather than shown as metadata.
+
 ## Reproduce Captures
 
 ```sh
@@ -75,6 +86,7 @@ python3 scripts/capture.py examples/fixtures-unicode.tape
 python3 scripts/capture.py examples/fixtures-unicode-text.tape
 python3 scripts/capture.py examples/fixtures-scrolling.tape
 python3 scripts/capture.py examples/fixtures-whitespace.tape
+python3 scripts/capture.py examples/fixtures-patch.tape
 ```
 
 The tapes use keyboard input and output waits. PNG images are written under ignored `media/`; keep

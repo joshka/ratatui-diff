@@ -62,8 +62,8 @@ a file header toggles it.
 | `--capture VARIANT` | Render one widget-only frame for documentation captures       |
 
 Fixtures: `showcase` (default), `context`, `files`, `alignment`, `unicode`, `unicode-text`,
-`whitespace`, `multi-file`, and `syntax`. All fixtures are generated in memory; the viewer never
-reads files.
+`whitespace`, `multi-file`, `patch`, and `syntax`. `patch` parses `git show` output with a rename,
+an edit, and a new file. All fixtures are built into the example; the viewer never reads files.
 
 ## How the screenshots are made
 

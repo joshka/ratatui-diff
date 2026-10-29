@@ -29,7 +29,7 @@ fn commit_headers_before_git_diffs_are_not_patches() {
     let document = DiffDocument::parse(jj).unwrap();
     assert_eq!(
         summary(&document),
-        [(Some("a/f"), Some("b/f"), CHANGE.to_vec())]
+        [(Some("f"), Some("f"), CHANGE.to_vec())]
     );
     assert_eq!(document.files()[0].metadata[0], "diff --git a/f b/f");
 }
@@ -44,10 +44,7 @@ fn format_patch_mail_is_not_metadata() {
                 @@ -1,2 +1,2 @@\n-old\n+new\n same\n-- \n2.56.0\n\n";
     let document = DiffDocument::parse(mail).unwrap();
     let kinds = [LineKind::Delete, LineKind::Insert, LineKind::Context];
-    assert_eq!(
-        summary(&document),
-        [(Some("a/f"), Some("b/f"), kinds.to_vec())]
-    );
+    assert_eq!(summary(&document), [(Some("f"), Some("f"), kinds.to_vec())]);
     assert!(
         document.files()[0]
             .metadata
@@ -77,7 +74,7 @@ fn unified_tool_headers_parse_as_written() {
               +++ b/f\tThu Jan 01 00:00:00 1970 +0000\n@@ -1 +1 @@\n-old\n+new\n";
     let svn = "Index: f\n===================================================================\n\
                --- f\t(revision 1)\n+++ f\t(working copy)\n@@ -1 +1 @@\n-old\n+new\n";
-    for (patch, old, new) in [(gnu, "f", "f"), (hg, "a/f", "b/f"), (svn, "f", "f")] {
+    for (patch, old, new) in [(gnu, "f", "f"), (hg, "f", "f"), (svn, "f", "f")] {
         let document = DiffDocument::parse(patch).unwrap();
         assert_eq!(
             summary(&document),
@@ -96,4 +93,64 @@ fn non_unified_formats_are_rejected() {
 
     assert!(DiffDocument::parse("1c1\n< old\n---\n> new\n").is_err());
     assert!(DiffDocument::parse("Modified regular file f:\n   1    1: oldnew\n").is_err());
+}
+
+#[test]
+fn git_prefixes_are_removed_from_every_operation() {
+    let patch = "diff --git a/m b/m\n--- a/m\n+++ b/m\n@@ -1 +1 @@\n-a\n+b\n\
+                 diff --git a/c b/c\nnew file mode 100644\n--- /dev/null\n+++ b/c\n@@ -0,0 +1 @@\n+x\n\
+                 diff --git a/d b/d\ndeleted file mode 100644\n--- a/d\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n\
+                 diff --git a/x b/y\nsimilarity index 100%\nrename from x\nrename to y\n";
+    let document = DiffDocument::parse(patch).unwrap();
+    let paths: Vec<_> = document
+        .files()
+        .iter()
+        .map(|file| (file.old_path.as_deref(), file.new_path.as_deref()))
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            (Some("m"), Some("m")),
+            (None, Some("c")),
+            (Some("d"), None),
+            (Some("x"), Some("y")),
+        ]
+    );
+    let unprefixed = "diff --git a/f a/f\n--- a/f\n+++ a/f\n@@ -1 +1 @@\n-a\n+b\n";
+    let document = DiffDocument::parse(unprefixed).unwrap();
+    assert_eq!(document.files()[0].new_path.as_deref(), Some("a/f"));
+}
+
+#[test]
+fn plain_unified_files_keep_their_own_headers() {
+    let svn = "Index: f\n===\n--- f\n+++ f\n@@ -1 +1 @@\n-a\n+b\n\
+               Index: g\n===\n--- g\n+++ g\n@@ -1,2 +1,2 @@\n same\n-a\n+b\n\\ No newline at end of file\n";
+    let document = DiffDocument::parse(svn).unwrap();
+    let metadata: Vec<_> = document.files().iter().map(|file| &file.metadata).collect();
+    assert_eq!(metadata, [&["Index: f", "==="], &["Index: g", "==="]]);
+    assert_eq!(document.files()[1].hunks[0].lines.len(), 3);
+}
+
+#[test]
+fn parse_errors_point_at_the_malformed_hunk() {
+    let patch = "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n\
+                 diff --git a/g b/g\nindex 1..2 100644\n--- a/g\n+++ b/g\n@@ -1,2 +1,2 @@\n-a\n+b\n";
+    let error = DiffDocument::parse(patch).unwrap_err();
+    assert_eq!(error.offset, patch.rfind("@@ "));
+    assert_eq!(error.message, "hunk header does not match hunk");
+
+    let plain =
+        "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n--- a/g\n+++ b/g\n@@ -1,2 +1,2 @@\n-a\n+b\n";
+    assert_eq!(
+        DiffDocument::parse(plain).unwrap_err().offset,
+        plain.rfind("@@ ")
+    );
+}
+
+#[test]
+fn lines_beyond_a_hunk_count_are_rejected() {
+    let patch = "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n+extra\n";
+    let error = DiffDocument::parse(patch).unwrap_err();
+    assert_eq!(error.offset, patch.find("+extra"));
+    assert!(error.message.contains("more lines"), "{error}");
 }
