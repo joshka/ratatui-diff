@@ -22,7 +22,7 @@ use contrast::Contrast;
 /// supply language choices and optionally complete source snapshots. Engine types remain private.
 /// Preparation is synchronous and may scan both complete sources. It has size limits, not a time
 /// limit. A host can move this highlighter into a worker and return its owned [`SyntaxStyles`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SyntaxHighlighter {
     syntaxes: &'static SyntaxSet,
     theme: Theme,
@@ -32,9 +32,13 @@ pub struct SyntaxHighlighter {
 impl SyntaxHighlighter {
     /// Load bundled grammars and select an exact theme name, such as `Nord`.
     ///
-    /// Assets are shared across instances. Unknown names return [`SyntaxError::UnknownTheme`].
-    /// Syntax backgrounds and underline are discarded; diff and interaction styles own those roles.
-    /// Choose token colors compatible with all of the selected diff theme's backgrounds.
+    /// Assets are shared across instances. Syntax backgrounds and underline are discarded; diff and
+    /// interaction styles own those roles. Choose token colors compatible with all of the selected
+    /// diff theme's backgrounds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SyntaxError::UnknownTheme`] for names not listed by [`Self::themes`].
     ///
     /// ```
     /// use ratatui_diff::{Diff, DiffDocument, FileSyntax, SyntaxHighlighter, SyntaxSource};
@@ -75,10 +79,15 @@ impl SyntaxHighlighter {
     /// This runs once on the selected engine theme, never during painting.
     ///
     /// Requires explicit RGB backgrounds for context, additions/deletions, and their word styles.
-    /// Terminal-owned/unknown backgrounds return [`SyntaxError::UnsupportedBackground`]; a color
-    /// with no passing mixture returns [`SyntaxError::InsufficientContrast`]. The guarantee applies
-    /// only while rendering with the same diff backgrounds, before whitespace dimming and later
-    /// search/selection overlays. Those overlays can replace or reverse foreground/background.
+    /// The guarantee applies only while rendering with the same diff backgrounds, before
+    /// whitespace dimming and later search/selection overlays. Those overlays can replace or
+    /// reverse foreground/background.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SyntaxError::UnsupportedBackground`] naming the first surface whose background is
+    /// terminal-owned, absent, or not RGB, and [`SyntaxError::InsufficientContrast`] for a color
+    /// with no passing mixture.
     pub fn contrast_with(mut self, theme: DiffTheme) -> Result<Self, SyntaxError> {
         let contrast = Contrast::new(theme)?;
         let foreground = self
@@ -117,8 +126,9 @@ impl SyntaxHighlighter {
     }
 
     /// Bundled language names; extensions such as `rs` are also accepted by preparation.
-    pub fn languages(&self) -> impl Iterator<Item = &str> {
-        self.syntaxes
+    pub fn languages() -> impl Iterator<Item = &'static str> {
+        bundled()
+            .0
             .syntaxes()
             .iter()
             .map(|syntax| syntax.name.as_str())
@@ -137,10 +147,17 @@ impl SyntaxHighlighter {
     /// CR and final-newline state. Retained input is explicitly best-effort: parsers restart after
     /// unavailable gaps and cannot know lexical state opened in omitted source.
     ///
-    /// Errors reject the complete result: invalid/duplicate files, unknown languages, mismatched
-    /// source, work-limit exhaustion, non-opaque foregrounds, and engine failures. No source is
-    /// read from disk. Input strings are borrowed only during this call. Binary/metadata-only
-    /// files produce no styles. Clones of the target document may use the result.
+    /// No source is read from disk. Input strings are borrowed only during this call.
+    /// Binary/metadata-only files produce no styles. Clones of the target document may use the
+    /// result.
+    ///
+    /// # Errors
+    ///
+    /// Any error rejects the complete result: [`SyntaxError::MissingFile`] and
+    /// [`SyntaxError::DuplicateFile`] for invalid file indexes, [`SyntaxError::UnknownLanguage`],
+    /// [`SyntaxError::SourceMismatch`] when full source disagrees with retained lines,
+    /// [`SyntaxError::LimitExceeded`], [`SyntaxError::UnsupportedForeground`], and
+    /// [`SyntaxError::Engine`].
     pub fn prepare(
         &self,
         document: &DiffDocument,
@@ -180,9 +197,7 @@ impl SyntaxHighlighter {
                 }
             }
         }
-        output
-            .lines
-            .sort_unstable_by_key(|line| source_key(line.position));
+        output.lines.sort_unstable_by_key(|line| line.position);
         Ok(SyntaxStyles {
             document: document.id,
             lines: output.lines,
@@ -362,7 +377,10 @@ fn bundled() -> &'static (SyntaxSet, LazyThemeSet) {
 }
 
 /// Source availability for one file's syntax preparation.
-#[derive(Debug, Clone, Copy)]
+///
+/// New source kinds may be added in minor releases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SyntaxSource<'a> {
     /// Complete original and modified UTF-8 snapshots. Use an empty absent side for additions or
     /// deletions. Each side's retained lines must match exactly; omitted text establishes lexical
@@ -380,7 +398,7 @@ pub enum SyntaxSource<'a> {
 }
 
 /// Language and available source for a file selected by its document index.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileSyntax<'a> {
     /// Zero-based index in [`DiffDocument::files`].
     pub file: usize,
@@ -439,7 +457,7 @@ impl SyntaxStyles {
 
     pub(crate) fn line(&self, position: SourcePosition) -> &[StyledSpan] {
         self.lines
-            .binary_search_by_key(&source_key(position), |line| source_key(line.position))
+            .binary_search_by_key(&position, |line| line.position)
             .map_or(&[], |index| &self.lines[index].spans)
     }
 }
@@ -536,16 +554,11 @@ fn retained_lines(document: &DiffDocument, file: usize, side: Side) -> Vec<(usiz
         .collect()
 }
 
-fn source_key(position: SourcePosition) -> (usize, u8, usize) {
-    (
-        position.file,
-        u8::from(position.side == Side::New),
-        position.line,
-    )
-}
-
 /// Category of a preparation limit exceeded by an input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// New categories may be added in minor releases alongside new [`SyntaxLimits`] fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SyntaxLimit {
     /// Total source bytes across selected files and sides.
     SourceBytes,
@@ -553,6 +566,36 @@ pub enum SyntaxLimit {
     LineBytes,
     /// Coalesced retained style ranges.
     Spans,
+}
+
+/// A composed diff background that contrast adaptation checks token colors against.
+///
+/// New surfaces may be added in minor releases as diff themes gain backgrounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ContrastSurface {
+    /// Unchanged lines, from [`DiffTheme::context`].
+    Context,
+    /// Inserted lines, [`DiffTheme::insert`] over context.
+    Insertion,
+    /// Deleted lines, [`DiffTheme::delete`] over context.
+    Deletion,
+    /// Changed words in inserted lines, [`DiffTheme::insert_word`] over insertion.
+    InsertedWord,
+    /// Changed words in deleted lines, [`DiffTheme::delete_word`] over deletion.
+    DeletedWord,
+}
+
+impl fmt::Display for ContrastSurface {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Context => "context",
+            Self::Insertion => "insertion",
+            Self::Deletion => "deletion",
+            Self::InsertedWord => "inserted word",
+            Self::DeletedWord => "deleted word",
+        })
+    }
 }
 
 /// Failed syntax preparation or attachment; errors never install partial results.
@@ -592,8 +635,8 @@ pub enum SyntaxError {
     },
     /// Contrast adaptation requires a terminal-owned, absent, or non-RGB background.
     UnsupportedBackground {
-        /// One of context, insertion, deletion, inserted word, or deleted word.
-        surface: &'static str,
+        /// The first diff surface without an RGB background.
+        surface: ContrastSurface,
     },
     /// No 8-bit mixture toward white or black reaches 4.5:1 on all selected backgrounds.
     InsufficientContrast {

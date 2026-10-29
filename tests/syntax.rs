@@ -75,7 +75,7 @@ fn bundled_languages_themes_and_thread_traits() {
     thread_safe::<SyntaxError>();
     let highlighter = SyntaxHighlighter::bundled("Nord").unwrap();
     assert!(SyntaxHighlighter::themes().any(|name| name == "Nord"));
-    assert!(highlighter.languages().any(|name| name == "Rust"));
+    assert!(SyntaxHighlighter::languages().any(|name| name == "Rust"));
     for language in ["rs", "Rust", "TOML", "TypeScript", "Dockerfile"] {
         let document = DiffDocument::from_text("", "value = 123\n");
         highlighter

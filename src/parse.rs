@@ -54,16 +54,16 @@ impl DiffDocument {
                 || line.starts_with("diff --combined ")
                 || line.starts_with("@@@")
             {
-                return Err(DiffError {
-                    offset: Some(offset),
-                    message: "combined merge diffs are unsupported".into(),
-                });
+                return Err(DiffError::at(
+                    Some(offset),
+                    "combined merge diffs are unsupported",
+                ));
             }
             if previous.1.starts_with("*** ") && line.starts_with("--- ") {
-                return Err(DiffError {
-                    offset: Some(previous.0),
-                    message: "context diffs are unsupported".into(),
-                });
+                return Err(DiffError::at(
+                    Some(previous.0),
+                    "context diffs are unsupported",
+                ));
             }
             if line.starts_with("@@ ") {
                 preamble = false;
@@ -124,10 +124,10 @@ fn file_segments(base: usize, chunk: &str) -> Result<Vec<(usize, &str)>, DiffErr
                 && !body.starts_with("--- ")
                 && !matches!(body, "-- " | "--");
             if extra {
-                return Err(DiffError {
-                    offset: Some(base + offset),
-                    message: "hunk has more lines than its header counts".into(),
-                });
+                return Err(DiffError::at(
+                    Some(base + offset),
+                    "hunk has more lines than its header counts",
+                ));
             }
         }
         if body.starts_with("@@ ") {
@@ -239,10 +239,7 @@ fn parse_file(base: usize, segment: &str, files: &mut Vec<DiffFile>) -> Result<(
                     original + n.saturating_sub(normalized)
                 })
                 .unwrap_or(base);
-            DiffError {
-                offset: Some(offset),
-                message,
-            }
+            DiffError::at(Some(offset), message)
         })?;
         let strip = |path: &str, prefix: &str| -> String {
             path.strip_prefix(prefix).unwrap_or(path).to_owned()
@@ -281,9 +278,15 @@ fn parse_file(base: usize, segment: &str, files: &mut Vec<DiffFile>) -> Result<(
                     old += usize::from(a.is_some());
                     new += usize::from(b.is_some());
                 }
+                let heading = h
+                    .function_context()
+                    .map(|heading| heading.trim_end_matches(['\r', '\n']))
+                    .filter(|heading| !heading.is_empty())
+                    .map(str::to_owned);
                 hunks.push(Hunk {
                     old: h.old_range().start()..old,
                     new: h.new_range().start()..new,
+                    heading,
                     lines,
                 });
             }

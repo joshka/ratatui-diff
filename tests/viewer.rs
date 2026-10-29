@@ -51,7 +51,7 @@ fn keeps_final_newline_markers() {
 fn rejects_truncated_hunks_and_combined_diffs() {
     assert!(DiffDocument::parse("--- a/a\n+++ b/a\n@@ -1,2 +1 @@\n-old\n+new\n").is_err());
     let e = DiffDocument::parse("diff --cc a\n").unwrap_err();
-    assert_eq!(e.offset, Some(0));
+    assert_eq!(e.offset(), Some(0));
 }
 #[test]
 fn empty_patch_is_empty() {
@@ -98,6 +98,7 @@ fn validates_ranges_and_preserves_supplied_highlights() {
         hunks: vec![Hunk {
             old: 1..2,
             new: 1..2,
+            heading: None,
             lines: vec![
                 line,
                 DiffLine::new(LineKind::Insert, None, Some(1), "new\n"),
@@ -127,6 +128,7 @@ fn validates_utf8_highlight_boundaries() {
         hunks: vec![Hunk {
             old: 0..0,
             new: 1..2,
+            heading: None,
             lines: vec![line],
         }],
     };
@@ -293,6 +295,7 @@ fn structured_hunks_must_not_overlap() {
     let hunk = Hunk {
         old: 1..2,
         new: 1..2,
+        heading: None,
         lines: vec![line],
     };
     let file = DiffFile {
@@ -384,6 +387,7 @@ fn structured_documents_reject_impossible_file_and_line_shapes() {
     file.hunks = vec![Hunk {
         old: 0..0,
         new: 1..3,
+        heading: None,
         lines: vec![
             DiffLine::new(LineKind::Insert, None, Some(1), "first"),
             DiffLine::new(LineKind::Insert, None, Some(2), "second\n"),

@@ -209,6 +209,7 @@
 //! # Compatibility
 //!
 //! This pre-1.0 API may change between minor releases.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod compare;
 mod model;
@@ -224,8 +225,8 @@ pub use model::{DiffDocument, DiffError, DiffFile, DiffLine, Hunk, LineKind, Sid
 pub use selection::{SelectionMotion, SourceBoundary, SourceSelection};
 #[cfg(feature = "syntax")]
 pub use syntax::{
-    FileSyntax, SyntaxError, SyntaxHighlighter, SyntaxLimit, SyntaxLimits, SyntaxSource,
-    SyntaxStyles,
+    ContrastSurface, FileSyntax, SyntaxError, SyntaxHighlighter, SyntaxLimit, SyntaxLimits,
+    SyntaxSource, SyntaxStyles,
 };
 pub use theme::DiffTheme;
 pub use widget::{

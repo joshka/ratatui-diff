@@ -8,7 +8,7 @@ use crate::{DiffDocument, DiffLine, Side, SourcePosition};
 ///
 /// `byte` is a grapheme boundary in the retained text, or `text.len() + 1` to include LF on a
 /// terminated line. CR remains part of the text. Coordinates belong to one immutable document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceBoundary {
     /// File, side, and one-based line number.
     pub position: SourcePosition,
@@ -21,7 +21,7 @@ pub struct SourceBoundary {
 ///
 /// Anchor remains fixed when focus moves. Ordering is by `(line, byte)`, independently of display
 /// order, wrapping, or split alignment. Empty selections are valid carets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceSelection {
     /// Fixed source boundary.
     pub anchor: SourceBoundary,
@@ -185,7 +185,10 @@ fn visit_source(
 }
 
 /// Source movement for a host's keyboard bindings, independent of wrapped display rows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// New motions, such as word movement, may be added in minor releases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SelectionMotion {
     /// Advance one whole grapheme, then LF, then the next available adjacent source line.
     Next,

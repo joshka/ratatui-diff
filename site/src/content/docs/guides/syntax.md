@@ -54,7 +54,7 @@ let diff = Diff::new(&document).theme(theme).syntax_styles(&styles)?;
 ```
 
 `language` accepts a file extension or a syntax name. `SyntaxHighlighter::themes()` and
-`highlighter.languages()` list the bundled choices. Files you leave out of the request render
+`SyntaxHighlighter::languages()` list the bundled choices. Files you leave out of the request render
 without syntax colors.
 
 `SyntaxStyles` owns its output. You can drop the source strings and the highlighter after

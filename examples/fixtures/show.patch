@@ -11,7 +11,7 @@ rename to src/http.rs
 index 5d1e2c3..8a9b0c1 100644
 --- a/src/client.rs
 +++ b/src/http.rs
-@@ -1,7 +1,8 @@
+@@ -12,7 +12,8 @@ impl Client {
  use crate::retry::Backoff;
  
 -pub fn fetch(url: &str) -> Response {
