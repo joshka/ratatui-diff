@@ -180,3 +180,60 @@ fn hunk_headings_are_kept_and_rendered() {
     files[0].hunks[0].heading = Some("two\nlines".into());
     assert!(DiffDocument::new(files).is_err());
 }
+
+#[test]
+fn patch_like_lines_in_a_commit_message_stay_prose() {
+    let hunk = "From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001\n\
+                Subject: [PATCH] Explain hunks\n\nA header looks like\n@@ -1 +1 @@\nin prose.\n\
+                ---\n\ndiff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n";
+    let context = "From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001\n\
+                   Subject: [PATCH] Note\n\n*** important\n--- see below\n---\n\n\
+                   diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n";
+    let separator = "From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001\n\
+                     Subject: [PATCH] Divide\n\nAbove\n***************\nbelow\n---\n\n\
+                     diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n";
+    for mail in [hunk, context, separator] {
+        let document = DiffDocument::parse(mail).unwrap();
+        assert_eq!(
+            summary(&document),
+            [(Some("f"), Some("f"), CHANGE.to_vec())]
+        );
+    }
+}
+
+#[test]
+fn commit_text_after_a_hunkless_section_is_not_its_metadata() {
+    let log = "commit 1111111111111111111111111111111111111111\nAuthor: A U Thor <a@example.com>\n\n\
+               \x20   Rename\n\ndiff --git a/x b/y\nsimilarity index 100%\nrename from x\nrename to y\n\n\
+               commit 2222222222222222222222222222222222222222\nAuthor: A U Thor <a@example.com>\n\n\
+               \x20   Edit\n\ndiff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n";
+    let document = DiffDocument::parse(log).unwrap();
+    assert_eq!(document.files().len(), 2);
+    let metadata = &document.files()[0].metadata;
+    assert!(
+        metadata
+            .iter()
+            .all(|line| !line.contains("commit") && !line.contains("Author")),
+        "{metadata:?}"
+    );
+    assert_eq!(metadata.last().map(String::as_str), Some("rename to y"));
+}
+
+#[test]
+fn mailbox_with_several_patches_parses_each() {
+    let mbox = "From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001\n\
+                Subject: [PATCH 1/2] One\n\n---\ndiff --git a/f b/f\nold mode 100644\nnew mode 100755\n\
+                -- \n2.56.0\n\n\
+                From 2222222222222222222222222222222222222222 Mon Sep 17 00:00:00 2001\n\
+                Subject: [PATCH 2/2] Two\n\n---\ndiff --git a/g b/g\n--- a/g\n+++ b/g\n@@ -1 +1 @@\n-a\n+b\n\
+                -- \n2.56.0\n";
+    let document = DiffDocument::parse(mbox).unwrap();
+    assert_eq!(document.files().len(), 2);
+    assert!(
+        document.files()[0]
+            .metadata
+            .iter()
+            .all(|line| !line.starts_with("From "))
+    );
+    assert_eq!(document.files()[1].hunks.len(), 1);
+}
