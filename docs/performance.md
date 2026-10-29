@@ -221,15 +221,16 @@ After 1,000 frames the additional observed growth is only 48–64 KiB. These sna
 absence of leaks or measure peak transient memory. RSS remaining unchanged after dropping inputs is
 consistent with allocator page retention; exact attribution needs an allocator profile.
 
-## Prepared glyph storage candidate
+## Prepared glyph storage
 
-The October 9 baseline above remains unchanged. A follow-up on immutable main
-`2983b0b5f442cbecfe2985ffe4fdcd5231cf8d34` replaces each glyph's owned string with a range into one
-prepared line buffer. Ordinary graphemes index its source prefix; tabs, whitespace markers, control
-escapes, dotted-circle bases, and newline notation append display text. Original source ranges
-remain independent. Completed glyph arrays use exact-size boxed slices, discarding vector capacity
-reserved during preparation. Split context still prepares both sides, including hidden files; this
-change does not defer preparation or change display/source index rebuilding.
+The October 9 baseline above predates this change, which shipped in
+[#21](https://github.com/joshka/ratatui-diff/pull/21). Measured against main
+`2983b0b5f442cbecfe2985ffe4fdcd5231cf8d34`, it replaces each glyph's owned string with a range into
+one prepared line buffer. Ordinary graphemes index its source prefix; tabs, whitespace markers,
+control escapes, dotted-circle bases, and newline notation append display text. Original source
+ranges remain independent. Completed glyph arrays use exact-size boxed slices, discarding vector
+capacity reserved during preparation. Split context still prepares both sides, including hidden
+files; this change does not defer preparation or change display/source index rebuilding.
 
 Safe temporary instrumentation of the existing 100,000-line retained Unicode fixture accounts for
 private storage structurally. It sums glyph vector capacities times `size_of::<Glyph>()`, text
@@ -266,8 +267,8 @@ cargo bench --bench viewer --locked -- "$glyph_filter" \
 RATATUI_DIFF_MEMORY=1 cargo bench --bench viewer --locked
 ```
 
-Repeat with a distinct baseline name, and run the memory probe three times. Compare the immutable
-baseline in a separate jj workspace; never change an active owner's revision for measurements.
+Repeat with a distinct baseline name, and run the memory probe three times. Build the baseline from
+a separate checkout so both executables come from fixed revisions.
 
 | Operation, retained 100k split/wrapped | Baseline mean range | Candidate mean range |
 | -------------------------------------- | ------------------- | -------------------- |
@@ -299,16 +300,14 @@ reveal, and replacement contracts remain covered by focused and existing integra
 
 ## Baseline follow-up units
 
-These recommendations describe the original measurement-only baseline. The prepared glyph storage
-candidate above implements its first investigation; the remaining units are independent.
+These recommendations describe the original measurement-only baseline. Prepared glyph storage above
+implemented its first recommendation, source-backed glyph ranges; the remaining units are
+independent.
 
-1. Profile glyph allocations first. Baseline initial layout prepares every retained source grapheme,
-   including hidden files/context; ordinary graphemes own individual `String`s, and split context
-   prepares both panes. Test source-backed glyph ranges with owned text only for transformations, or
-   deferred glyph preparation for closed regions, as separate changes. Preserve Unicode geometry,
-   synthetic cues, source hits, reveal, search, and selection; require matched visual and terminal
-   evidence. The RSS result motivates investigation, not an exact byte attribution or a promised
-   saving.
+1. Consider deferring glyph preparation for closed files and context. Initial layout still prepares
+   every retained source grapheme, including hidden regions, and split context prepares both panes.
+   Preserve Unicode geometry, synthetic cues, source hits, reveal, search, and selection; require
+   matched visual and terminal evidence.
 1. Profile display/source index rebuilding before changing folding/resize. Open-context resize and
    file toggles are milliseconds even though steady painting is cheap. Investigate reusing unchanged
    indexes or avoiding repeated work in hidden regions; preserve source reveal and navigation before
@@ -318,7 +317,7 @@ candidate above implements its first investigation; the remaining units are inde
    validation-only path should retain gap/grapheme/end-of-line checks and be measured independently.
 1. Use the insertion and uneven baselines when evaluating replacement-pairing changes. Their
    preparation and initial-layout boundaries expose costs separately; cached scrolling should remain
-   unaffected. Evaluate candidate code only from an immutable coordinator snapshot.
+   unaffected.
 
 The original baseline includes no core optimization or CI timing gate. Private allocator
 attribution, peak RSS, many-file/many-fold scaling, terminal output latency, and candidate alignment

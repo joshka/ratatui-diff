@@ -356,9 +356,9 @@ struct LayoutKey {
 /// # Example
 ///
 /// ```
-/// use ratatui_core::buffer::Buffer;
-/// use ratatui_core::layout::Rect;
-/// use ratatui_core::widgets::StatefulWidget;
+/// use ratatui::buffer::Buffer;
+/// use ratatui::layout::Rect;
+/// use ratatui::widgets::StatefulWidget;
 /// use ratatui_diff::{Diff, DiffDocument, DiffState, Side};
 ///
 /// let document = DiffDocument::from_text("old\n", "new\n");
@@ -846,9 +846,9 @@ impl DiffState {
     /// Blank clipping cells never claim source bytes. Unified context returns both sides.
     ///
     /// ```
-    /// use ratatui_core::buffer::Buffer;
-    /// use ratatui_core::layout::Rect;
-    /// use ratatui_core::widgets::StatefulWidget;
+    /// use ratatui::buffer::Buffer;
+    /// use ratatui::layout::Rect;
+    /// use ratatui::widgets::StatefulWidget;
     /// use ratatui_diff::{Diff, DiffDocument, DiffState, HitTest};
     ///
     /// let document = DiffDocument::from_text("", "界\n");
@@ -1175,11 +1175,15 @@ impl DiffState {
 ///
 /// # Configuration
 ///
-/// Use [`mode`](Self::mode) for unified/split layout, [`theme`](Self::theme) for styles,
-/// [`line_numbers`](Self::line_numbers) and [`word_highlights`](Self::word_highlights) for
-/// emphasis, and [`wrap`](Self::wrap), [`whitespace`](Self::whitespace), and
-/// [`tab_width`](Self::tab_width) for text presentation. The [crate documentation](crate)
-/// includes rendering and navigation examples.
+/// Use [`mode`](Self::mode) for unified/split layout, [`theme`](Self::theme) and
+/// [`selection_style`](Self::selection_style) for styles, [`line_numbers`](Self::line_numbers)
+/// and [`word_highlights`](Self::word_highlights) for emphasis, and [`wrap`](Self::wrap),
+/// [`whitespace`](Self::whitespace), and [`tab_width`](Self::tab_width) for text presentation.
+/// [`context_lines`](Self::context_lines) folds unchanged runs,
+/// [`sticky_file_headers`](Self::sticky_file_headers) pins the current file header, and
+/// [`show_stats`](Self::show_stats) adds a totals row. With feature `syntax`,
+/// `syntax_styles` attaches prepared syntax colors. The [crate documentation](crate) includes
+/// rendering and navigation examples.
 #[derive(Debug, Clone, Copy)]
 pub struct Diff<'a> {
     #[cfg(feature = "syntax")]
@@ -1255,9 +1259,9 @@ impl<'a> Diff<'a> {
     /// Omitted patch context cannot be expanded. Changing the radius invalidates fold handles.
     ///
     /// ```
-    /// use ratatui_core::buffer::Buffer;
-    /// use ratatui_core::layout::Rect;
-    /// use ratatui_core::widgets::StatefulWidget;
+    /// use ratatui::buffer::Buffer;
+    /// use ratatui::layout::Rect;
+    /// use ratatui::widgets::StatefulWidget;
     /// use ratatui_diff::{Diff, DiffDocument, DiffState};
     ///
     /// let old = "one\ntwo\nthree\nfour\n";
@@ -1320,10 +1324,9 @@ impl<'a> Diff<'a> {
         self
     }
 
-    /// Set the selection overlay, applied after line, word, and whitespace styles.
+    /// Set the selection overlay, applied after line, word, whitespace, and search styles.
     ///
     /// Defaults to reverse video, which also works with monochrome themes. Does not affect layout.
-    /// Future search overlays should be composed before selection.
     pub fn selection_style(mut self, style: Style) -> Self {
         self.selection_style = style;
         self

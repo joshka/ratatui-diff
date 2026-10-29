@@ -12,7 +12,7 @@ use ratatui_core::style::{Color, Modifier, Style};
 /// # Example
 ///
 /// ```
-/// use ratatui_core::style::{Color, Style};
+/// use ratatui::style::{Color, Style};
 /// use ratatui_diff::DiffTheme;
 ///
 /// let theme = DiffTheme {

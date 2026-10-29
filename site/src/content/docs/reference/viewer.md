@@ -20,34 +20,36 @@ cargo run --example viewer --features syntax -- \
 
 ## Keys
 
-| Key                 | Action                                             |
-| ------------------- | -------------------------------------------------- |
-| `↑` `↓`, `j` `k`    | Scroll one row                                     |
-| `PageUp` `PageDown` | Scroll one page                                    |
-| `Home` `End`        | Start or end of the document                       |
-| `←` `→`             | Scroll horizontally (unwrapped)                    |
-| `[` `]`             | Previous or next hunk                              |
-| `Tab` `Shift+Tab`   | Focus the next or previous visible file header     |
-| `Enter`             | Collapse or expand the focused file                |
-| `A` `Z`             | Expand or collapse all files                       |
-| `e` `z`             | Expand the first visible context fold; fold all    |
-| `d`                 | Toggle document totals                             |
-| `s`                 | Toggle unified and split view                      |
-| `w`                 | Toggle wrapping                                    |
-| `t`                 | Toggle whitespace markers                          |
-| `n`                 | Toggle line numbers                                |
-| `i`                 | Toggle word highlights                             |
-| `m`                 | Toggle monochrome                                  |
-| `h`                 | Toggle syntax colors (`syntax` feature)            |
-| `/`                 | Search; `Enter` to confirm, `Esc` to clear         |
-| `f` `F`             | Next or previous match                             |
-| `v`                 | Start a selection; arrows, `Home`, `End` extend it |
-| `c`                 | Show the selected text's copy preview              |
-| `p`                 | Probe a fixed cell's source coordinates            |
-| `q`                 | Quit                                               |
+| Key                 | Action                                                                 |
+| ------------------- | ---------------------------------------------------------------------- |
+| `↑` `↓`, `j` `k`    | Scroll one row                                                         |
+| `PageUp` `PageDown` | Scroll one page                                                        |
+| `Home` `End`        | Start or end of the document                                           |
+| `←` `→`             | Scroll horizontally (unwrapped)                                        |
+| `[` `]`             | Previous or next hunk                                                  |
+| `Tab` `Shift+Tab`   | Focus the next or previous visible file header                         |
+| `Enter`             | Collapse or expand the focused file                                    |
+| `A` `Z`             | Expand or collapse all files                                           |
+| `e` `z`             | Expand the first visible context fold; fold all                        |
+| `d`                 | Toggle document totals                                                 |
+| `s`                 | Toggle unified and split view                                          |
+| `w`                 | Toggle wrapping                                                        |
+| `t`                 | Toggle whitespace markers                                              |
+| `n`                 | Toggle line numbers                                                    |
+| `i`                 | Toggle word highlights                                                 |
+| `m`                 | Toggle monochrome                                                      |
+| `h`                 | Toggle syntax colors (`syntax` feature)                                |
+| `/`                 | Search; `Enter` jumps to the first match                               |
+| `f` `F`             | Next or previous match                                                 |
+| `v`                 | Start a selection; arrows, `Home`, `End` extend it                     |
+| `c`                 | Show the selected text's copy preview                                  |
+| `p`                 | Probe a fixed cell's source coordinates                                |
+| `Esc`               | Clear the selection, then the search; while typing a search, cancel it |
+| `q`                 | Quit                                                                   |
 
-Moving the mouse over source shows its file, side, line, and byte range in the status row; clicking
-a file header toggles it.
+Moving the mouse over source shows its file, side, line, and byte range in the status row. Clicking
+a file header toggles it, clicking a context fold summary expands it, and clicking or dragging over
+source selects it.
 
 ## Options and fixtures
 

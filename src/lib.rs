@@ -4,6 +4,9 @@
 //! navigation. Your application supplies terminal setup, key bindings, and input data. Rendering
 //! depends only on `ratatui-core`.
 //!
+//! Add it beside Ratatui 0.30, which re-exports the `ratatui-core` 0.1 types this crate uses, with
+//! `cargo add ratatui ratatui-diff`. The minimum supported Rust version is 1.98.
+//!
 //! # Render in a Ratatui application
 //!
 //! Prepare a [`DiffDocument`] once and keep a [`DiffState`] between frames to retain the viewport
@@ -136,9 +139,9 @@
 //!   [`source_at`](DiffState::source_at).
 //!
 //! ```
-//! use ratatui_core::buffer::Buffer;
-//! use ratatui_core::layout::Rect;
-//! use ratatui_core::widgets::StatefulWidget;
+//! use ratatui::buffer::Buffer;
+//! use ratatui::layout::Rect;
+//! use ratatui::widgets::StatefulWidget;
 //! use ratatui_diff::{Diff, DiffDocument, DiffState, Side, SourcePosition};
 //!
 //! let document = DiffDocument::from_text("before\n", "after\n");
@@ -154,9 +157,41 @@
 //! }));
 //! ```
 //!
-//! Resizing or switching modes retains the nearest available source anchor. Replacing the document
-//! resets navigation on the next render. Theme and word-highlight changes preserve layout. Give
-//! each independently navigated pane its own state, even when both borrow the same document.
+//! Resizing or switching modes keeps the top row in view: a file or hunk header, or the nearest
+//! available source line. A pending reveal takes precedence: a requested selection reveal first,
+//! then the active search match, so the revealed target stays visible in the new layout. Replacing
+//! the document resets navigation on the next render. Theme and word-highlight changes preserve
+//! layout. Give each independently navigated pane its own state, even when both borrow the same
+//! document.
+//!
+//! # Fold, pin headers, and show totals
+//!
+//! Large reviews stay readable when unchanged runs and whole files collapse. Fold retained context
+//! with [`Diff::context_lines`] and expand it with [`DiffState::set_context_expanded`]. Collapse a
+//! whole file with a handle from [`DiffDocument::file_fold`], including before the first render to
+//! restore saved preferences. [`Diff::sticky_file_headers`] keeps the current file's header at the
+//! top while scrolling, and [`Diff::show_stats`] reserves a row for insertion and deletion totals.
+//!
+//! ```
+//! use ratatui_diff::{Diff, DiffDocument, DiffState};
+//!
+//! let old: String = (1..=20).map(|n| format!("line {n}\n")).collect();
+//! let new = old.replace("line 10\n", "line ten\n");
+//! let document = DiffDocument::compare(&old, &new, usize::MAX);
+//! let mut state = DiffState::new();
+//! let file = document.file_fold(0).unwrap();
+//! assert!(state.set_file_expanded(&file, false));
+//! let diff = Diff::new(&document)
+//!     .context_lines(Some(3))
+//!     .sticky_file_headers(true)
+//!     .show_stats(true);
+//! ```
+//!
+//! Folding changes presentation, not source: search, selection, and extraction still see folded
+//! lines, and revealing a match inside a fold opens it. For pointer input, [`DiffState::hit_test`]
+//! maps a rendered cell to a [`HitTest`] region: a source grapheme, a gutter, a fold summary, or a
+//! file header. It reports the region only; to toggle a file on click, pass the header's handle to
+//! [`DiffState::set_file_expanded`] from your pointer handler.
 //!
 //! # Select source for copying
 //!

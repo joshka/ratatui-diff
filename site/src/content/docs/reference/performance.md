@@ -34,13 +34,15 @@ latency guarantees.
 | Steady frame                | 75–80 µs     | 89–177 µs     |
 | Hit-test one cell           | 15 ns        | 15 ns         |
 
-Steady frames were 68–82 µs across unified and split, wrapped and unwrapped, at both sizes. Closed
-files redraw in about 23 µs.
+Steady frames in the other modes were 68–82 µs at both sizes; split view with wrapping varied more
+between runs at 100,000 lines. Closed files redraw in about 23 µs.
 
 Memory is dominated by prepared layout: the 100,000-line Unicode fixture uses about 33 MiB after
-comparison and about 650 MiB resident after its first layout. Work to shrink the glyph
-representation is tracked in the repository's
-[performance notes](https://github.com/joshka/ratatui-diff/blob/main/docs/performance.md).
+comparison and about 465 MiB resident after its first layout, measured after the glyph storage
+change in [#21](https://github.com/joshka/ratatui-diff/pull/21). The timing table above predates
+that change; the
+[performance notes](https://github.com/joshka/ratatui-diff/blob/main/docs/performance.md#prepared-glyph-storage)
+compare first layout and resize before and after it.
 
 ## Reproduce
 
