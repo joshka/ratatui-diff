@@ -378,6 +378,9 @@ pub struct DiffState {
     rendered: Option<(Rect, usize, usize)>,
     // Repeated file-header screen row in the last paint; not part of the source-row index.
     sticky_header: Option<usize>,
+    // Whether the last render reserved a row for a sticky header. When the current top row is a
+    // natural file header, nothing is pinned and that row shows document content instead.
+    sticky_reserved: bool,
     selection: Option<crate::SourceSelection>,
     selection_document: Option<u64>,
     reveal_selection: bool,
@@ -501,16 +504,16 @@ impl DiffState {
                 self.expanded.insert(fold.clone());
                 // If the control is visible, replace it with the first revealed source line.
                 // Off-screen programmatic expansion keeps the current viewport anchor.
-                let visible =
-                    self.screen
-                        .iter()
-                        .skip(self.offset)
-                        .take(self.height)
-                        .any(|screen| {
-                            self.rows[screen.row]
-                                .fold
-                                .is_some_and(|index| self.folds[index] == *fold)
-                        });
+                let visible = self
+                    .screen
+                    .iter()
+                    .skip(self.offset)
+                    .take(self.content_rows())
+                    .any(|screen| {
+                        self.rows[screen.row]
+                            .fold
+                            .is_some_and(|index| self.folds[index] == *fold)
+                    });
                 if visible {
                     self.pending = Some(RevealTarget::Source(SourcePosition {
                         file: fold.file,
@@ -526,6 +529,16 @@ impl DiffState {
             self.search.reveal = false;
         }
         true
+    }
+
+    /// Document rows the viewport shows at the current offset, below any sticky header.
+    fn content_rows(&self) -> usize {
+        let unpinned = self.sticky_reserved
+            && self
+                .screen
+                .get(self.offset)
+                .is_some_and(|screen| self.rows[screen.row].file_header);
+        self.height + usize::from(unpinned)
     }
 
     fn current_fold(&self, fold: &ContextFold) -> bool {
@@ -1983,6 +1996,7 @@ impl StatefulWidget for &Diff<'_> {
         } else {
             None
         };
+        state.sticky_reserved = sticky;
         state.rendered = Some((area, state.offset, state.horizontal));
         buf.set_style(full_area, self.theme.context);
         for y in full_area.y..full_area.bottom() {
@@ -2414,12 +2428,18 @@ fn content(line: &DiffLine, whitespace: bool, tab: usize) -> Content {
     let mut text = line.text.clone();
     let mut glyphs = Vec::new();
     let mut column = 0;
+    // Validated highlights are ordered and non-overlapping, so a forward cursor finds every range
+    // intersecting each grapheme without rescanning earlier ranges.
+    let ranges = line.highlights.as_deref().unwrap_or_default();
+    let mut next = 0;
     for (byte, g) in line.text.grapheme_indices(true) {
-        let emphasized = line.highlights.as_ref().is_some_and(|ranges| {
-            ranges
-                .iter()
-                .any(|r| r.start < byte + g.len() && r.end > byte)
-        });
+        while ranges.get(next).is_some_and(|r| r.end <= byte) {
+            next += 1;
+        }
+        let emphasized = ranges[next..]
+            .iter()
+            .take_while(|r| r.start < byte + g.len())
+            .any(|r| r.end > byte);
         if g == "\t" {
             let width = tab - column % tab;
             for n in 0..width {

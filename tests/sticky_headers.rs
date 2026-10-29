@@ -149,3 +149,75 @@ fn final_source_remains_visible_through_wrap_resize_stats_and_replacement() {
     assert_eq!(state.offset(), 0);
     assert!(!text(&buffer, 3).contains("src/second.rs"));
 }
+
+#[test]
+fn expanding_a_fold_on_the_last_unpinned_row_reveals_its_source() {
+    let context: String = (1..=10).map(|n| format!("c{n}\n")).collect();
+    let file = |path: &str| {
+        let old = format!("a\nb\n{context}");
+        let new = format!("A\nB\n{context}");
+        let mut file = DiffDocument::compare(&old, &new, usize::MAX).files()[0].clone();
+        file.old_path = Some(path.into());
+        file.new_path = Some(path.into());
+        file
+    };
+    let document = DiffDocument::new(vec![file("first"), file("second"), file("third")]).unwrap();
+    let widget = Diff::new(&document)
+        .sticky_file_headers(true)
+        .context_lines(Some(0));
+    let mut state = DiffState::new();
+    paint(widget, &mut state, 30, 7);
+    state.next_file();
+    let buffer = paint(widget, &mut state, 30, 7);
+    assert!(text(&buffer, 3).contains("second"), "{}", text(&buffer, 3));
+    assert!(
+        text(&buffer, 9).contains("unchanged"),
+        "{}",
+        text(&buffer, 9)
+    );
+    let fold = state
+        .context_folds()
+        .iter()
+        .find(|fold| fold.file == 1)
+        .unwrap()
+        .clone();
+    assert!(state.set_context_expanded(&fold, true));
+    let buffer = paint(widget, &mut state, 30, 7);
+    // The summary row was visible, so its first revealed line replaces it at the anchor.
+    assert!(text(&buffer, 3).contains("second"), "{}", text(&buffer, 3));
+    assert!(text(&buffer, 4).contains("c1"), "{}", text(&buffer, 4));
+}
+
+#[test]
+fn scrolling_before_expanding_uses_the_new_top_row() {
+    let context: String = (1..=10).map(|n| format!("c{n}\n")).collect();
+    let file = |path: &str| {
+        let old = format!("a\nb\n{context}");
+        // The extra insertion puts the fold summary one row below a pinned viewport.
+        let new = format!("A\nB\nX\n{context}");
+        let mut file = DiffDocument::compare(&old, &new, usize::MAX).files()[0].clone();
+        file.old_path = Some(path.into());
+        file.new_path = Some(path.into());
+        file
+    };
+    let document = DiffDocument::new(vec![file("first"), file("second"), file("third")]).unwrap();
+    let widget = Diff::new(&document)
+        .sticky_file_headers(true)
+        .context_lines(Some(0));
+    let mut state = DiffState::new();
+    paint(widget, &mut state, 30, 7);
+    state.next_file();
+    paint(widget, &mut state, 30, 7);
+    // After one row of scrolling the header is pinned, so the fold summary is off-screen.
+    state.scroll_lines(1);
+    let offset = state.offset();
+    let fold = state
+        .context_folds()
+        .iter()
+        .find(|fold| fold.file == 1)
+        .unwrap()
+        .clone();
+    assert!(state.set_context_expanded(&fold, true));
+    paint(widget, &mut state, 30, 7);
+    assert_eq!(state.offset(), offset);
+}
