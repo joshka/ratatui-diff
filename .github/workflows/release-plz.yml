@@ -30,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: release-plz/action@18641b6c63063cc5ff8786ebf69cd57e8541bae1 # v0.5.140
+      - uses: release-plz/action@7ef5e4d4b0420630cfcaeb182c01e13651d4c577 # v0.5.145
         id: release
         with:
           command: release
@@ -52,7 +52,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: release-plz/action@18641b6c63063cc5ff8786ebf69cd57e8541bae1 # v0.5.140
+      - uses: release-plz/action@7ef5e4d4b0420630cfcaeb182c01e13651d4c577 # v0.5.145
         id: pr
         with:
           command: release-pr

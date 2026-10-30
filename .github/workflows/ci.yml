@@ -20,7 +20,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install nightly --profile minimal --component rustfmt
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: just@1.58.0,rumdl@0.2.77,typos-cli@1.47.2
       - run: just fmt-check
@@ -47,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install "$TOOLCHAIN" --profile minimal
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo "+$TOOLCHAIN" test --all-targets --all-features --locked
       - run: cargo "+$TOOLCHAIN" test --doc --all-features --locked
       - run: cargo "+$TOOLCHAIN" test --no-default-features --lib --tests --locked
@@ -67,7 +67,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install "$TOOLCHAIN" --profile minimal --component clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo "+$TOOLCHAIN" clippy --all-targets --all-features --locked -- -D warnings
   documentation:
     name: documentation
@@ -79,7 +79,7 @@ jobs:
           persist-credentials: false
           lfs: true
       - run: rustup toolchain install stable --profile minimal
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: just@1.58.0,cargo-rdme@2.2.3
       - run: rustup toolchain install nightly nightly-2026-08-05 --profile minimal
@@ -94,7 +94,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: just@1.58.0,cargo-deny@0.20.2,zizmor@1.26.1
       - run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
@@ -111,7 +111,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-semver-checks@0.49.0
       # cargo-semver-checks 0.49 supports the Rust 1.98 rustdoc JSON format.
@@ -137,7 +137,7 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install the published Betamax binary
         run: |
           curl --fail --location --retry 3 \
@@ -153,7 +153,7 @@ jobs:
         run: echo "RATATUI_DIFF_VIEWER=$GITHUB_WORKSPACE/target/debug/examples/viewer" >> "$GITHUB_ENV"
       - name: Sticky-header acceptance and review gallery
         # Upstream has no tags; pin the inspected integration commit until it publishes a release.
-        uses: joshka/betamax-action@4f9e3b05a390d0bb16e72af92e3995541a532c79 # zizmor: ignore[stale-action-refs]
+        uses: joshka/betamax-action@80d342bbcf8f8833a5422a8dfc53b5af298bf63b # zizmor: ignore[stale-action-refs]
         env:
           BETAMAX_FAILURE_DIR: media/terminal-ux/sticky/failures
         with:
