@@ -33,8 +33,9 @@ impl SyntaxHighlighter {
     /// Load bundled grammars and select an exact theme name, such as `Nord`.
     ///
     /// Assets are shared across instances. Syntax backgrounds and underline are discarded; diff and
-    /// interaction styles own those roles. Choose token colors compatible with all of the selected
-    /// diff theme's backgrounds.
+    /// interaction styles own those roles. Translucent token colors are blended over the theme's
+    /// own background once, here, as the theme's editor would draw them. Choose token colors
+    /// compatible with all of the selected diff theme's backgrounds.
     ///
     /// # Errors
     ///
@@ -68,7 +69,8 @@ impl SyntaxHighlighter {
         if terminal_palette(found) {
             return Err(SyntaxError::UnsupportedTheme(theme.to_owned()));
         }
-        let theme = found.clone();
+        let mut theme = found.clone();
+        opaque_foregrounds(&mut theme);
         Ok(Self {
             syntaxes,
             theme,
@@ -385,6 +387,37 @@ impl SyntaxHighlighter {
     }
 }
 
+/// Blend translucent foregrounds over the theme background so every token color is opaque RGB.
+///
+/// Many RGB themes dim comments or punctuation with alpha. Terminal cells have no alpha, and the
+/// diff theme's backgrounds differ per row, so the theme's own background is the only surface the
+/// author chose these colors against.
+fn opaque_foregrounds(theme: &mut Theme) {
+    let background = theme
+        .settings
+        .background
+        .filter(|color| color.a == 255)
+        .unwrap_or(syntect::highlighting::Color::BLACK);
+    let blend = |color: &mut Option<syntect::highlighting::Color>| {
+        if let Some(color) = color.as_mut().filter(|color| color.a != 255) {
+            let mix = |fg: u8, bg: u8| {
+                let alpha = u16::from(color.a);
+                ((u16::from(fg) * alpha + u16::from(bg) * (255 - alpha) + 127) / 255) as u8
+            };
+            *color = syntect::highlighting::Color {
+                r: mix(color.r, background.r),
+                g: mix(color.g, background.g),
+                b: mix(color.b, background.b),
+                a: 255,
+            };
+        }
+    };
+    blend(&mut theme.settings.foreground);
+    for item in &mut theme.scopes {
+        blend(&mut item.style.foreground);
+    }
+}
+
 /// Whether a theme encodes terminal palette indexes: its colors use alpha 0 for an indexed color
 /// and 1 for the terminal default, never an RGB alpha.
 fn terminal_palette(theme: &Theme) -> bool {
@@ -655,6 +688,9 @@ pub enum SyntaxError {
         position: SourcePosition,
     },
     /// A resolved foreground is non-opaque and cannot be represented faithfully in terminal cells.
+    ///
+    /// Bundled RGB themes are blended to opaque colors when loaded, so this indicates an engine
+    /// color outside the theme's own scopes.
     UnsupportedForeground(SourcePosition),
     /// The engine failed while processing a source line.
     Engine {
@@ -719,5 +755,38 @@ impl Error for SyntaxError {
             Self::Engine { source, .. } => Some(source.as_ref()),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn listed_themes_have_only_opaque_foregrounds() {
+        for name in SyntaxHighlighter::themes() {
+            let theme = SyntaxHighlighter::bundled(name).unwrap().theme;
+            let colors = std::iter::once(theme.settings.foreground)
+                .chain(theme.scopes.iter().map(|item| item.style.foreground))
+                .flatten();
+            for color in colors {
+                assert_eq!(color.a, 255, "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn translucent_colors_blend_toward_the_background() {
+        let mut theme = Theme::default();
+        theme.settings.background = Some(syntect::highlighting::Color::WHITE);
+        theme.settings.foreground = Some(syntect::highlighting::Color {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 102,
+        });
+        opaque_foregrounds(&mut theme);
+        let color = theme.settings.foreground.unwrap();
+        assert_eq!((color.r, color.a), (153, 255));
     }
 }
