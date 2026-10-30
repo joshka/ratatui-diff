@@ -46,8 +46,9 @@ impl DiffDocument {
         let mut chunks = Vec::new();
         let mut chunk_start = 0;
         let mut previous = (0, "");
-        // Text before the first Git section is a preamble (commit or mail headers) unless it
-        // holds a hunk of its own.
+        let mut before_previous = (0, "");
+        // Commit or mail text before a Git section is a preamble. Only a hunk under its own
+        // `---`/`+++` file header ends it, so patch-like lines in a message stay prose.
         let mut preamble = true;
         for line in input.split_inclusive('\n') {
             if line.starts_with("diff --cc ")
@@ -59,13 +60,18 @@ impl DiffDocument {
                     "combined merge diffs are unsupported",
                 ));
             }
-            if previous.1.starts_with("*** ") && line.starts_with("--- ") {
+            // A context diff is confirmed by a hunk separator directly under its `***`/`---` file
+            // header; either alone can appear in commit text.
+            if line.starts_with("***************")
+                && previous.1.starts_with("--- ")
+                && before_previous.1.starts_with("*** ")
+            {
                 return Err(DiffError::at(
-                    Some(previous.0),
+                    Some(before_previous.0),
                     "context diffs are unsupported",
                 ));
             }
-            if line.starts_with("@@ ") {
+            if line.starts_with("@@ ") && previous.1.starts_with("+++ ") {
                 preamble = false;
             }
             if line.starts_with("diff --git ") {
@@ -74,11 +80,19 @@ impl DiffDocument {
                 }
                 chunk_start = offset;
                 preamble = false;
+            } else if !preamble && commit_header(line) {
+                // `git log -p` and mailbox output separate commits; their text belongs to no file.
+                chunks.push((chunk_start, &input[chunk_start..offset]));
+                chunk_start = offset;
+                preamble = true;
             }
+            before_previous = previous;
             previous = (offset, line);
             offset += line.len();
         }
-        chunks.push((chunk_start, &input[chunk_start..]));
+        if !preamble || chunks.is_empty() {
+            chunks.push((chunk_start, &input[chunk_start..]));
+        }
         for (base, chunk) in chunks {
             for (base, segment) in file_segments(base, chunk)? {
                 parse_file(base, segment, &mut files)?;
@@ -86,6 +100,16 @@ impl DiffDocument {
         }
         Self::new(files)
     }
+}
+
+/// Whether a line starts a commit in `git log` output (`commit <sha>`) or a mailbox message from
+/// `git format-patch` (`From <sha> <date>`).
+fn commit_header(line: &str) -> bool {
+    let sha = line
+        .strip_prefix("commit ")
+        .or_else(|| line.strip_prefix("From "))
+        .and_then(|rest| rest.split_whitespace().next());
+    sha.is_some_and(|sha| sha.len() >= 7 && sha.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 /// Split a chunk into one segment per file, rejecting hunks with more lines than their header.
@@ -203,6 +227,10 @@ fn parse_file(base: usize, segment: &str, files: &mut Vec<DiffFile>) -> Result<(
         byte_map.push((normalized.len(), source_offset));
         normalized.push_str(&text);
         source_offset += line.len();
+    }
+    // Blank lines separating a section from following commit text are not headers.
+    while metadata.last().is_some_and(String::is_empty) {
+        metadata.pop();
     }
     let git = normalized.starts_with("diff --git ");
     let options = if git {
